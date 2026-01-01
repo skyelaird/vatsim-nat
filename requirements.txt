@@ -1,0 +1,2 @@
+# No external dependencies - uses Python stdlib only!
+# urllib, json, sqlite3, logging, datetime, re all built-in

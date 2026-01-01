@@ -1,0 +1,43 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Database
+nat_traffic.db
+nat_traffic.db-journal
+*.db
+*.db-journal
+
+# Logs
+*.log
+nat_collector.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Navigraph data (large files, licensed)
+NavData/wpNavFIX.txt
+NavData/wpNavRTE.txt
+NavData/wpNavAID.txt
+NavData/airports.dat
+Data-PMDG/
+
+# Keep structure files
+!NavData/cycle_info.txt
+!NavData/cycle.json

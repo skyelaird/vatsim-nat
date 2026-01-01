@@ -1,0 +1,4 @@
+[Ident]
+NavData=AIRAC-2513
+OpProgram=DEC25JAN22/26
+CoData=JEP-2513
