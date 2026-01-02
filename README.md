@@ -9,7 +9,7 @@ Comprehensive data collection and analysis of North Atlantic air traffic on the 
 - ✅ **OTS track correlation** (automated daily fetch from FAA)
 - ✅ **High-precision waypoint database** (25,294 NAT region fixes)
 - ✅ **Real-time traffic monitoring** (5-minute polling)
-- 🚧 **Conflict probe** (strategic pre-entry detection - in development)
+- ✅ **ATC Conflict Probe** (strategic detection with strip display - see [CONFLICT_PROBE.md](CONFLICT_PROBE.md))
 
 ---
 
