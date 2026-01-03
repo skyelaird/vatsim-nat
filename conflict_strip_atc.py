@@ -7,9 +7,10 @@ import sqlite3
 from datetime import datetime, timedelta, UTC
 import math
 import re
+from pathlib import Path
 from nat_waypoints import get_waypoint
 
-DB_PATH = 'nat_traffic.db'
+DB_PATH = Path(__file__).parent / 'nat_traffic.db'
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 3440.065
