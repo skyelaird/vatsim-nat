@@ -126,8 +126,9 @@ def create_crossing(conn, pilot, route_data, remarks_data, flight_plan):
             full_route, oceanic_route, entry_fix, exit_fix, ots_track, eet_string,
             selcal, pbn_capability, com_capability, sur_capability, operator, registration,
             entry_time, entry_lat, entry_lon, entry_fl, entry_gs,
+            last_update_time, current_lat, current_lon, current_fl, current_gs,
             crossed_mid
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     """, (
         pilot['callsign'],
         route_data['aircraft_type'],
@@ -149,7 +150,8 @@ def create_crossing(conn, pilot, route_data, remarks_data, flight_plan):
         remarks_data['sur'],
         remarks_data['operator'],
         remarks_data['registration'],
-        now, lat, lon, fl, gs
+        now, lat, lon, fl, gs,
+        now, lat, lon, fl, gs  # Initialize current position same as entry
     ))
     
     conn.commit()
@@ -179,6 +181,25 @@ def update_midpoint(conn, crossing_id, pilot):
     
     conn.commit()
     logger.info(f"{pilot['callsign']} in mid-Atlantic zone")
+
+def update_current_position(conn, crossing_id, pilot):
+    """Update current position for active crossing (called every poll cycle)"""
+    cursor = conn.cursor()
+    
+    now = datetime.now(UTC).isoformat()
+    lat = pilot['latitude']
+    lon = pilot['longitude']
+    alt = pilot['altitude']
+    gs = pilot['groundspeed']
+    fl = int(alt / 100) if alt else None
+    
+    cursor.execute("""
+        UPDATE nat_crossings
+        SET last_update_time = ?, current_lat = ?, current_lon = ?, current_fl = ?, current_gs = ?
+        WHERE crossing_id = ?
+    """, (now, lat, lon, fl, gs, crossing_id))
+    
+    conn.commit()
 
 def complete_crossing(conn, crossing_id, pilot):
     """Mark crossing as complete with exit data"""
@@ -273,7 +294,11 @@ def process_flight(conn, pilot):
             create_crossing(conn, pilot, route_data, remarks_data, flight_plan)
         
         else:
-            # Update existing crossing - check for midpoint zone
+            # Update existing crossing
+            # Always update current position for active crossings
+            update_current_position(conn, active['crossing_id'], pilot)
+            
+            # Check for midpoint zone crossing
             if not active['crossed_mid'] and is_in_mid_zone(lon):
                 update_midpoint(conn, active['crossing_id'], pilot)
             

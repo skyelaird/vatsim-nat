@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS nat_crossings (
     exit_fl INTEGER,
     exit_gs INTEGER,
     
+    -- Current position (updated every poll cycle for active crossings)
+    last_update_time TEXT,
+    current_lat REAL,
+    current_lon REAL,
+    current_fl INTEGER,
+    current_gs INTEGER,
+    
     -- Derived data
     crossing_duration INTEGER,  -- minutes
     inferred_fir TEXT,          -- CZQX, EGGX, BIRD, KZNY based on route/position
@@ -62,6 +69,7 @@ CREATE TABLE IF NOT EXISTS nat_crossings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_entry_time ON nat_crossings(entry_time);
+CREATE INDEX IF NOT EXISTS idx_last_update ON nat_crossings(last_update_time);
 CREATE INDEX IF NOT EXISTS idx_ots_track ON nat_crossings(ots_track);
 CREATE INDEX IF NOT EXISTS idx_aircraft_type ON nat_crossings(aircraft_type);
 CREATE INDEX IF NOT EXISTS idx_departure ON nat_crossings(departure);

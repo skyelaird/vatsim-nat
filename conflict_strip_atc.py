@@ -105,15 +105,33 @@ def get_active_crossings():
         SELECT callsign, aircraft_type, departure, destination,
                oceanic_route, ots_track, filed_altitude, selcal,
                entry_lat, entry_lon, entry_fl, entry_gs,
-               mid_lat, mid_lon, mid_fl, mid_gs, crossed_mid
-        FROM nat_crossings WHERE exit_time IS NULL
+               mid_lat, mid_lon, mid_fl, mid_gs, crossed_mid,
+               current_lat, current_lon, current_fl, current_gs, last_update_time
+        FROM nat_crossings 
+        WHERE exit_time IS NULL
+        -- Only flights with recent position updates (within last 15 minutes)
+        AND last_update_time IS NOT NULL
+        AND (julianday('now') - julianday(last_update_time)) * 24 * 60 < 15
     """)
     
     flights = []
     for row in cursor.fetchall():
-        lat, lon = (row[12], row[13]) if row[16] else (row[8], row[9])
-        gs = (row[15] if row[16] else row[11]) or None
-        fl = row[14] if row[16] else row[10]
+        # Prioritize current position (most recent collector update)
+        # Fallback: mid position if crossed midpoint, otherwise entry position
+        if row[17] and row[18]:  # current_lat, current_lon exist
+            lat, lon = row[17], row[18]
+            fl = row[19]
+            gs = row[20]
+        elif row[16]:  # crossed_mid = True
+            lat, lon = row[12], row[13]
+            fl = row[14]
+            gs = row[15]
+        else:  # use entry
+            lat, lon = row[8], row[9]
+            fl = row[10]
+            gs = row[11]
+        
+        gs = gs if gs and gs > 100 else None
         
         flights.append({
             'callsign': row[0],
@@ -162,15 +180,18 @@ def build_trajectory(flight):
     filed_mach = float(mach_m.group(1)) / 100 if mach_m else 0.85
     
     # Get FL from oceanic route (e.g., MALOT/M082F360 → FL360)
+    # This is the PLANNED NAT crossing level, not departure altitude
+    # Priority: 1) Oceanic route FL, 2) Filed altitude, 3) Default FL370
     fl_match = re.search(r'F(\d{3})', flight['oceanic_route'])
     if fl_match:
-        fl = int(fl_match.group(1))
+        fl = int(fl_match.group(1))  # Oceanic cruise level
     else:
         try:
-            fl = int(flight['filed_altitude']) if flight['filed_altitude'] else flight['fl']
+            # Fallback to filed altitude if no oceanic FL specified
+            fl = int(flight['filed_altitude']) if flight['filed_altitude'] else 370
             if fl > 1000: fl //= 100
         except:
-            fl = flight['fl'] or 370
+            fl = 370
     
     tas = mach_to_tas(filed_mach, fl)
     gs = flight['gs'] if flight['gs'] and flight['gs'] > 100 else tas
@@ -243,38 +264,47 @@ def detect_conflicts(trajectories, flights):
                     continue
                 
                 # CRITICAL: Only flag FUTURE conflicts
-                # If ETA is in the past, they've already passed this waypoint (or stale data)
                 if f1['eta'] < current_time or f2['eta'] < current_time:
                     continue
                 
                 pair = tuple(sorted([f1['callsign'], f2['callsign']]))
-                
-                # Already found a conflict for this pair?
-                if pair in seen_pairs:
-                    continue
                 
                 # Calculate time separation
                 time_diff = (f2['eta'] - f1['eta']).total_seconds()
                 sep_min = abs(time_diff) / 60
                 
                 if sep_min < 5:
-                    seen_pairs.add(pair)
-                    
-                    conflict_counts[f1['callsign']] = conflict_counts.get(f1['callsign'], 0) + 1
-                    conflict_counts[f2['callsign']] = conflict_counts.get(f2['callsign'], 0) + 1
-                    
-                    conflicts.append({
-                        'waypoint': waypoint,
-                        'flight1': f1['callsign'],
-                        'flight2': f2['callsign'],
-                        'fl': f1['fl'],
-                        'eta1': f1['eta'],
-                        'eta2': f2['eta'],
-                        'mach1': f1['mach'],
-                        'mach2': f2['mach'],
-                        'separation_min': sep_min,
-                        'severity': 'HIGH' if sep_min < 3 else 'MEDIUM'
-                    })
+                    # First conflict for this pair? Create new conflict entry
+                    if pair not in seen_pairs:
+                        seen_pairs.add(pair)
+                        
+                        conflict_counts[f1['callsign']] = conflict_counts.get(f1['callsign'], 0) + 1
+                        conflict_counts[f2['callsign']] = conflict_counts.get(f2['callsign'], 0) + 1
+                        
+                        conflicts.append({
+                            'waypoint': waypoint,
+                            'waypoints': [waypoint],  # List of all conflicted waypoints
+                            'flight1': f1['callsign'],
+                            'flight2': f2['callsign'],
+                            'fl': f1['fl'],
+                            'eta1': f1['eta'],
+                            'eta2': f2['eta'],
+                            'mach1': f1['mach'],
+                            'mach2': f2['mach'],
+                            'separation_min': sep_min,
+                            'severity': 'HIGH' if sep_min < 3 else 'MEDIUM'
+                        })
+                    else:
+                        # Add this waypoint to existing conflict
+                        for conflict in conflicts:
+                            if conflict['flight1'] in pair and conflict['flight2'] in pair:
+                                conflict['waypoints'].append(waypoint)
+                                # Update to minimum separation
+                                if sep_min < conflict['separation_min']:
+                                    conflict['separation_min'] = sep_min
+                                    conflict['waypoint'] = waypoint  # Primary conflict point
+                                    conflict['severity'] = 'HIGH' if sep_min < 3 else 'MEDIUM'
+                                break
     
     # Add metadata
     for conflict in conflicts:
@@ -306,12 +336,39 @@ def get_route_summary(route):
     return ' '.join(parts) if len(parts) <= 8 else ' '.join(parts[:3] + parts[-3:])
 
 def print_atc_strip(conflict, f1, f2, f1_traj, f2_traj):
-    """Print ATC strip with 3-column layout"""
+    """Print ATC strip with 4-line layout: waypoints, times, mach/gs/route, FL"""
     
     # Determine directions
     f1_eb = f1['departure'][0] in 'KC'
     f2_eb = f2['departure'][0] in 'KC'
     head_on = " (HEAD-ON)" if f1_eb != f2_eb else ""
+    
+    # Detect overtake: same direction but separation closing
+    overtake = ""
+    if f1_eb == f2_eb and len(conflict['waypoints']) > 1:
+        # Get first and last conflicted waypoints in trajectory order
+        # Check separation trend across the conflict
+        first_wpt_times = []
+        last_wpt_times = []
+        
+        for wpt, t in f1_traj:
+            if wpt == conflict['waypoints'][0]:
+                first_wpt_times.append(t)
+            if wpt == conflict['waypoints'][-1]:
+                last_wpt_times.append(t)
+        
+        for wpt, t in f2_traj:
+            if wpt == conflict['waypoints'][0]:
+                first_wpt_times.append(t)
+            if wpt == conflict['waypoints'][-1]:
+                last_wpt_times.append(t)
+        
+        if len(first_wpt_times) == 2 and len(last_wpt_times) == 2:
+            first_sep = abs((first_wpt_times[0] - first_wpt_times[1]).total_seconds() / 60)
+            last_sep = abs((last_wpt_times[0] - last_wpt_times[1]).total_seconds() / 60)
+            
+            if first_sep > last_sep + 1:  # Separation decreasing
+                overtake = " 🔴 OVERTAKE - CLOSING"
     
     # Wrong-way warnings
     culprit = ""
@@ -327,79 +384,61 @@ def print_atc_strip(conflict, f1, f2, f1_traj, f2_traj):
     # Header
     icon = '⚠️' if conflict['severity'] == 'MEDIUM' else '🚨'
     sep_int = int(conflict['separation_min'])
-    print(f"\n{icon}  CONFLICT at {conflict['waypoint']} FL{conflict['fl']} - Separation: {sep_int} min{head_on}{culprit}")
+    print(f"\n{icon}  CONFLICT at {conflict['waypoint']} FL{conflict['fl']} - Separation: {sep_int} min{head_on}{overtake}{culprit}")
     
     print("┌" + "─" * 118 + "┐")
     
     # Flight 1
-    print_flight_strip(f1, f1_traj, conflict['fl'], conflict['eta1'], conflict['mach1'], f1_eb, conflict['waypoint'])
+    print_flight_strip(f1, f1_traj, conflict['fl'], conflict['eta1'], conflict['mach1'], f1_eb, conflict['waypoints'])
     
     print("├" + "─" * 118 + "┤")
     
     # Flight 2
-    print_flight_strip(f2, f2_traj, conflict['fl'], conflict['eta2'], conflict['mach2'], f2_eb, conflict['waypoint'])
+    print_flight_strip(f2, f2_traj, conflict['fl'], conflict['eta2'], conflict['mach2'], f2_eb, conflict['waypoints'])
     
     print("└" + "─" * 118 + "┘")
 
-def print_flight_strip(flight, trajectory, fl, eta, mach, is_eastbound, conflict_waypoint):
-    """Print single flight strip with conflict waypoint highlighted"""
-    
-    TOMB_WIDTH = 12
-    DATA_WIDTH = 94
+def print_flight_strip(flight, trajectory, fl, eta, mach, is_eastbound, conflict_waypoints):
+    """Print single flight strip: waypoints / times / mach+gs+route / FL
+    conflict_waypoints is a list of all waypoints in conflict
+    """
     
     ac_type = simplify_aircraft_type(flight['aircraft'])
     selcal = flight['selcal'] if flight['selcal'] else ""
     route_summary = get_route_summary(flight['oceanic_route'])
+    gs = flight.get('gs', 0)
+    
+    # Build waypoint and time columns - each gets exactly 9 chars
+    wpt_parts = []
+    time_parts = []
+    for wpt, time in trajectory:
+        marker = "*" if wpt in conflict_waypoints else " "
+        wpt_short = format_waypoint_short(wpt)
+        wpt_parts.append(f"{marker}{wpt_short:6s}  ")
+        time_parts.append(f"{time.strftime('%H%M'):^9s}")
+    
+    wpt_line = "".join(wpt_parts).rstrip()
+    time_line = "".join(time_parts)
+    
+    # Mach and groundspeed line
+    mach_gs = f"M.{int(mach*100):02d} G{int(gs):03d}" if gs else f"M.{int(mach*100):02d}"
+    
+    # Show current FL in brackets if different from filed
+    current_fl = flight.get('fl', fl)
+    fl_display = f"FL{fl}" if current_fl == fl else f"FL{fl} ({current_fl})"
     
     if is_eastbound:
-        # EB: Empty left | Data center | Tombstone right
-        
-        # TOP: Waypoints W→E with conflict highlighted
-        wpt_line = "│" + " " * TOMB_WIDTH + " "
-        for wpt, _ in trajectory:
-            marker = "*" if wpt == conflict_waypoint else " "
-            wpt_line += f"{marker}{format_waypoint_short(wpt):6s} "
-        wpt_line += " " * (DATA_WIDTH - len(wpt_line) + TOMB_WIDTH + 3)
-        wpt_line += f"{flight['callsign']:8s} │"
-        print(wpt_line)
-        
-        # MIDDLE: Times + SELCAL in left column
-        time_line = f"│{selcal:^{TOMB_WIDTH}s} "
-        for _, time in trajectory:
-            time_line += f"{time.strftime('%H%M'):7s} "
-        time_line += " " * (DATA_WIDTH - len(time_line) + TOMB_WIDTH + 3)
-        time_line += f"{ac_type:8s} │"
-        print(time_line)
-        
-        # BOTTOM: Route
-        route_line = "│" + " " * TOMB_WIDTH + f" {route_summary}"
-        route_line += " " * (DATA_WIDTH - len(route_line) + TOMB_WIDTH + 3)
-        route_line += f"FL{fl:3d}    │"
-        print(route_line)
-        
+        # EB: Tombstone on right
+        print(f"│           {wpt_line:<88s}{flight['callsign']:>8s} │")
+        print(f"│  {selcal:8s} {time_line:<88s}{ac_type:>8s} │")
+        print(f"│  {mach_gs:10s} {'':97s} │")
+        print(f"│  {fl_display:<12s} {route_summary:<92s} │")
     else:
-        # WB: Tombstone left | Data center | Empty right
-        
-        # TOP: Waypoints W→E with conflict highlighted
-        wpt_line = f"│{flight['callsign']:^{TOMB_WIDTH}s} "
-        for wpt, _ in trajectory:
-            marker = "*" if wpt == conflict_waypoint else " "
-            wpt_line += f"{marker}{format_waypoint_short(wpt):6s} "
-        wpt_line += " " * (120 - len(wpt_line)) + "│"
-        print(wpt_line)
-        
-        # MIDDLE: Times + SELCAL in right column
-        time_line = f"│{ac_type:^{TOMB_WIDTH}s} "
-        for _, time in trajectory:
-            time_line += f"{time.strftime('%H%M'):7s} "
-        time_line += " " * (106 - len(time_line))
-        time_line += f"{selcal:>10s} │"
-        print(time_line)
-        
-        # BOTTOM: Route
-        route_line = f"│FL{fl:3d}       {route_summary}"
-        route_line += " " * (120 - len(route_line)) + "│"
-        print(route_line)
+        # WB: Tombstone on left
+        print(f"│{flight['callsign']:^10s} {wpt_line:<89s}{selcal:>8s} │")
+        print(f"│{ac_type:^10s} {time_line:<97s} │")
+        print(f"│{mach_gs:^10s} {'':97s} │")
+        print(f"│{fl_display:<14s} {route_summary:<93s} │")
 
 def main():
     print("=" * 120)
@@ -421,8 +460,9 @@ def main():
     print(f"✓ {len(conflicts)} conflicts\n")
     
     if conflicts:
+        current_time = datetime.now(UTC).strftime('%H%MZ')
         print("=" * 120)
-        print("CONFLICTS")
+        print(f"CONFLICTS - {current_time}")
         print("=" * 120)
         
         for c in conflicts:

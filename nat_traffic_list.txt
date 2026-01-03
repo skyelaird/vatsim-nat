@@ -1,0 +1,69 @@
+============================================================================================================================================
+NAT TRAFFIC LIST - 2053Z - 61 Active Crossings
+============================================================================================================================================
+Callsign   Dir Track  FL    Position        Updated    Entry    Route Summary                                               
+--------------------------------------------------------------------------------------------------------------------------------------------
+MLP55YH    WB  RND    FL377  58.3, -55.0    3 min      02/1726                                                              
+OOM222     EB  RND    FL345  47.0, -55.0    3 min      02/2025  NICSO/M079F350 DCT 48N050W ... MALOT DCT GISTI/N0454        
+BAW98T     EB  RND    FL412  52.0, -20.7    3 min      02/1741  PORTI/M082F400 DCT 47N050W ... LIMRI DCT XETBO/N0463        
+DLH402X    WB  RND    FL381  54.8, -42.4    3 min      02/1826  DOGAL/M086F380 DCT 54N020W ... 54N050W DCT NEEKO/N0498      
+DLH404     WB  RND    FL362  54.9, -42.0    3 min      02/1816  DOGAL/M081F380 DCT 54N020W ... 54N050W DCT NEEKO/N0470      
+DLH5W      WB  RND    FL374  53.0, -54.0    3 min      02/1726  DOGAL/M085F370 DCT 54N020W ... MIILS Q907 LORKA/N0491       
+OCN2106    WB  RND    FL400  26.8, -52.1    3 min      02/1516  REGHI/M082F380 DCT ETIKI ... 22N055W DCT FISST/N0473        
+SIA26      WB  RND    FL343  55.2, -21.2    3 min      02/2001  RESNO/M084F320 DCT 55N020W ... 55N050W DCT LOMSI/N0489      
+AAL317     WB  RND    FL342  56.1, -37.9    3 min      02/2032  RESNO/M085F330 DCT 55N020W ... CKW DCT BONGO/N0480          
+DLH412     WB  RND    FL380  52.8, -43.0    3 min      02/1816  LIMRI/M085F380 DCT 52N020W ... 52N050W DCT TUDEP/N0490      
+DLH428     WB  D      FL387  52.1, -49.0    3 min      02/1751  LIMRI/M085F390 NATD TUDEP/N0486                             
+VIR127B    WB  RND    FL383  54.2, -21.3    3 min      02/1956  DOGAL/M085F380 DCT 54N020W ... 54N050W DCT NEEKO/N0490      
+VIR127D    WB  RND    FL383  54.0, -19.8    3 min      02/2005  DOGAL/M085F380 DCT 54N020W ... 54N050W DCT NEEKO/N0489      
+BAW1156    WB  RND    FL413  53.0, -30.8    3 min      02/1911  LIMRI/M085F380 DCT 52N020W ... 52N050W DCT TUDEP/N0489      
+BAW93PW    WB  RND    FL363  53.1, -34.0    3 min      02/1851  LIMRI/M083F360 DCT 52N020W ... 52N050W DCT TUDEP/N0480      
+VIR90C     WB  C      FL395  52.1, -53.3    3 min      02/1726  MALOT/M085F370 NATC RIKAL/N0484                             
+AAL107     WB  RND    FL362  53.1, -20.7    3 min      02/2000  MALOT/M083F360 DCT 53N020W ... 53N050W DCT RIKAL/N0477      
+BAW64      WB  RND    FL363  53.3, -22.2    3 min      02/1951  MALOT/M082F360 DCT 53N020W ... 53N050W DCT RIKAL/N0479      
+DLH2       WB  RND    FL340  64.6, -32.4    3 min      02/1856  SUNOT/M085F360 DCT 60N020W ... 67N080W 65N090W 62N100W/N0497
+VIR103M    WB  RND    FL361  52.8, -11.4    3 min      02/2045  MALOT/M080F370 DCT 53N020W ... TOPPS DCT ENE/N0468          
+VIR9       WB  RND    FL372  53.9, -29.0    3 min      02/1921  MALOT/M085F370 DCT 53N020W ... 53N050W DCT RIKAL/N0485      
+ACA809     WB  RND    FL384  54.1, -53.5    3 min      02/1726  RESNO/M081F390 DCT 55N020W ... 55N050W DCT LOMSI/N0462      
+KLM165     WB  RND    FL363  55.1, -37.8    3 min      02/1841  DOGAL/M083F360 DCT 54N020W ... 54N050W DCT NEEKO/N0480      
+KLM171     WB  RND    FL359  25.6, -54.4    3 min      02/1501  DINIM/M084F320 DCT 50N020W ... RKDIA M576 OBIKE/N0492       
+KLM671     WB  A      FL373  53.6, -55.2    3 min      02/1721  RESNO/M083F370 NATA LOMSI/N0476                             
+EIN133     WB  RND    FL381  54.8, -43.1    3 min      02/1801  DOGAL/M081F380 DCT 54N020W ... 54N050W DCT NEEKO/N0470      
+EIN9KN     WB  B      FL313  51.9, -58.4    3 min      02/1651  DOGAL/M077F300 NATB NEEKO/N0451                             
+SAS930     WB  RND    FL353  53.5, -55.0    3 min      02/1721                                                              
+SAS2662    WB  I      FL382  55.0, -18.1    3 min      02/2010  RESNO/M080F380 DCT 55N020W ... 55N050W DCT LOMSI/N0465      
+BOX385     EB  RND    FL353  57.0, -20.1    3 min      02/1801  JANJO/M083F350 DCT 56N050W ... TENLI DCT NORTA/N0407        
+QTR91U     EB  RND    FL391  47.9, -23.4    3 min      02/1756  DOVEY/M085F370 DCT 42N060W ... ITUNI/N0481F370 N687 KINIB/N0
+TAP234Y    EB  RND    FL344  39.7, -18.5    3 min      02/1836  SLATN/M078F350 DCT 40N060W ... 3930N02000W DCT GUNTI/N0450  
+EIN108     EB  RND    FL371  54.0, -14.0    3 min      02/2025  JOOPY/M078F340 DCT 49N050W ... DOGAL DCT BEXET/N0444        
+EIN1068    EB  RND    FL415  60.2, -32.0    3 min      02/1906  LAKES/M082F390 DCT SAVRY ... 5930N02000W DCT AGORI/N0460    
+DLH461     EB  RND    FL389  43.8, -41.0    3 min      02/1916  SUMRS/M084F370 M204 ALOBI/M084F390 ... BULOX DCT TABOV/N0469
+KLM656     EB  RND    FL393  57.5, -24.2    3 min      02/1826  DORYY/M084F370 DCT 57N050W ... 57N020W DCT PIKIL/N0473      
+DLH005     EB  RND    ---   Unknown         Never      02/2052  MUSVA/M084F350 DCT CLAVY ... GINGA DCT TOPPA/N0436          
+KLM282     EB  RND    FL392  57.9, -12.5    3 min      02/1751  LAKES/M084F390 DCT SAVRY ... GOMUP/N0470F390 DCT GINGA/N0475
+LVL29EN    WB  RND    FL357  43.2, -59.5    3 min      02/1551  KOPAS/M080F360 DCT 4530N02000W ... ONGOT DCT SNAGY/N0455    
+AAL95      WB  RND    FL382  51.1, -34.2    3 min      02/1846  TULTA/M084F360 DCT GUNSO ... 50N050W DCT ELSIR/N0486        
+AFR14      WB  RND    FL389  51.9, -14.2    3 min      02/2030  LIMRI/M085F390 DCT 52N020W ... 52N050W DCT TUDEP/N0492      
+AFR2       WB  RND    FL378  46.6, -41.4    3 min      02/1811  LULOX/M085F320 DCT GIPER ... JAROM N50G LOMPI/N0496         
+JBU1408    WB  I      FL311  55.8, -43.3    3 min      02/1816  RESNO/M077F320 DCT 55N020W ... LOMSI/N0449F340 N674A ANATI/N
+AFR840     WB  RND    FL380  28.3, -47.2    3 min      02/1811  GAPLI/M084F340 DCT SOMAX ... 25N051W DCT DRDGE/N0490        
+FWI20P     WB  RND    FL380  25.8, -55.2    3 min      02/1506  LAPEX/M082F350 UN470 SEPAL ... RKDIA M576 OBIKE/N0467       
+DAL231     WB  RND    FL362  50.5, -23.7    3 min      02/1936  GAPLI/M081F340 DCT ATSUR ... 50N050W DCT ELSIR/N0474        
+ITY610     WB  RND    FL374  49.4, -52.5    3 min      02/1721  GAPLI/M083F340 DCT ATSUR ... 50N050W DCT ELSIR/N0481        
+DAL24B     WB  RND    FL400  28.9, -51.1    3 min      02/1536                                                              
+ACA811     WB  RND    FL337  41.1, -25.4    3 min      02/2050  GUNTI/M084F340 DCT 40N020W ... SASUG Q858 IRDUV/N0490       
+BCS37U     WB  RND    FL340  41.6, -35.3    3 min      02/1811  GUNTI/M084F340 T25 LENSI ... JEBBY DCT CARAC/N0489          
+IBE1212    WB  RND    FL407  44.7, -54.8    3 min      02/1621  ERPES/M084F400 DCT 40N020W ... 45N050W DCT RAFIN/N0486      
+TAP215     WB  RND    FL340  42.1, -31.0    3 min      02/1841  ERPES/M077F340 DCT 41N020W ... JAROM N56G LOMPI/N0448       
+EDW4K      WB  RND    FL385  48.6, -55.0    3 min      02/1706                                                              
+SWR18P     WB  RND    ---   Unknown         Never      02/2052  LULOX/M085F380 DCT DINIM/M085F390 ... 51N050W DCT ALLRY/N049
+SWR24      WB  RND    FL393  51.9, -28.7    3 min      02/1916  LULOX/M081F380 DCT DINIM/M081F390 ... 51N050W DCT ALLRY/N046
+SWR25      WB  RND    FL403  52.0, -30.8    3 min      02/1906  GAPLI/M085F400 DCT DINIM/M085F390 ... 51N050W DCT ALLRY/N048
+ITY125     WB  RND    FL316  51.6, -51.5    3 min      02/1831  LIMRI/M084F320 DCT 52N020W ... 52N050W DCT TUDEP/N0490      
+QTR62V     WB  RND    FL362  52.0, -18.0    3 min      02/2010  LIMRI/M084F360 DCT 52N020W ... 52N050W DCT TUDEP/N0492      
+QTR701     WB  RND    FL343  52.6, -24.5    3 min      02/1941  LIMRI/M084F350 DCT 52N020W ... 52N050W DCT TUDEP/N0482      
+BAW59G     WB  RND    FL390  45.7, -23.8    3 min      02/1706  37N040W/M083F390 43N030W 47N020W 50N010W/N0466              
+CFG4215    WB  RND    FL389  45.6, -23.1    3 min      02/1706  25N055W/M081F370 29N051W 33N046W ... RATKA/N0456F370 DCT GIT
+--------------------------------------------------------------------------------------------------------------------------------------------
+Total: 61 flights
+============================================================================================================================================
