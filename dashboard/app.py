@@ -24,9 +24,21 @@ if not Path(DB_PATH).exists():
 else:
     print(f"Using database: {DB_PATH} ({Path(DB_PATH).stat().st_size} bytes)")
 
-# NAT entry points
-EASTBOUND_ENTRIES = ['TUDEP', 'ELSIR', 'ALLRY', 'NICSO', 'SUPRY', 'JOOPY']  # West side
-WESTBOUND_ENTRIES = ['RIKAL', 'NEEKO', 'LOMSI', 'JANJO', 'PIKIL']  # East side
+# NAT entry points - COMPREHENSIVE lists
+EASTBOUND_ENTRIES = [
+    # Canadian entries (west side)
+    'DOGAL', 'LIMRI', 'RESNO', 'ELSIR', 'RATKA', 'JOOPY',
+    # US entries (west side)
+    'TUDEP', 'ALLRY', 'NICSO', 'SUPRY', 'DINIM', 'PORTI',
+    'KODIK', 'DIRGI', 'MUSVA'
+]
+
+WESTBOUND_ENTRIES = [
+    # UK/Ireland exits (east side for westbound = entry points)
+    'RIKAL', 'NEEKO', 'LOMSI', 'JANJO', 'PIKIL',
+    'MALOT', 'GISTI', 'SOORY', 'BEDRA', 'NERTU',
+    'BAKUR', 'LEKVA', 'NASBA', 'RENDL'
+]
 
 @app.route('/')
 def index():
@@ -81,13 +93,20 @@ def get_entry_strips(entry_name):
         
         now = datetime.now(UTC)
         approaching = filter_approaching_flights(flights, trajectories, now, 60)
-        entry_flights = [f for f in approaching if f['entry_fix'] == entry_name]
         
+        # Filter for THIS entry point only from approaching flights
+        entry_flights = [f for f in approaching if f.get('entry_fix') == entry_name]
+        
+        # Only show conflicts where BOTH flights are approaching this entry
         entry_conflicts = []
         for conflict in conflicts:
             if entry_name in conflict.get('waypoints', []):
-                f1 = next((f for f in flights if f['callsign'] == conflict['flight1']), None)
-                f2 = next((f for f in flights if f['callsign'] == conflict['flight2']), None)
+                f1_callsign = conflict['flight1']
+                f2_callsign = conflict['flight2']
+                
+                # Check if both flights are in our approaching list
+                f1 = next((f for f in entry_flights if f['callsign'] == f1_callsign), None)
+                f2 = next((f for f in entry_flights if f['callsign'] == f2_callsign), None)
                 
                 if f1 and f2:
                     entry_conflicts.append({
@@ -99,6 +118,8 @@ def get_entry_strips(entry_name):
                     })
         
         all_flights = [format_flight_for_strip(f) for f in entry_flights]
+        
+        print(f"LOMSI: {len(entry_flights)} approaching flights, {len(entry_conflicts)} conflicts")
         
         return jsonify({
             'entry_name': entry_name,
@@ -112,10 +133,10 @@ def get_entry_strips(entry_name):
         return jsonify({'error': str(e)}), 500
 
 def filter_approaching_flights(flights, trajectories, now, minutes_ahead):
-    """Filter flights approaching entry within specified minutes"""
+    """Filter flights approaching NAT entry within specified minutes"""
     approaching = []
     for flight in flights:
-        traj = next((t for t in trajectories if t and t[0]['callsign'] == flight['callsign']), None)
+        traj = next((t for t in trajectories if t and len(t) > 0 and t[0]['callsign'] == flight['callsign']), None)
         if not traj:
             continue
         
@@ -123,18 +144,40 @@ def filter_approaching_flights(flights, trajectories, now, minutes_ahead):
         entry_eta = entry_point['eta']
         time_to_entry = (entry_eta - now).total_seconds() / 60
         
+        print(f"Flight {flight['callsign']}: entry={entry_point['waypoint']}, ETA={entry_eta.strftime('%H%M')}, time={time_to_entry:.1f}min")
+        
         if 0 <= time_to_entry <= minutes_ahead:
             flight['entry_fix'] = entry_point['waypoint']
             flight['entry_eta'] = entry_eta.strftime('%H%M')
+            flight['trajectory'] = traj
             approaching.append(flight)
+    
+    print(f"\nTotal approaching: {len(approaching)} flights")
     return approaching
 
 def process_entry_points(entry_list, approaching_flights, conflicts, direction):
-    """Process entry points and determine conflict status"""
+    """Process entry points - count flights ENTERING at each fix"""
     result = []
+    
+    # Debug: Show all entry points being used
+    all_entries = {}
+    for f in approaching_flights:
+        entry = f.get('entry_fix')
+        all_entries[entry] = all_entries.get(entry, 0) + 1
+    print(f"\n{direction} - All entries in use: {all_entries}")
+    print(f"{direction} - Monitoring: {entry_list}")
+    
     for entry in entry_list:
+        # Flights entering at THIS specific entry point
         entry_flights = [f for f in approaching_flights if f.get('entry_fix') == entry]
-        entry_conflicts = [c for c in conflicts if entry in c.get('waypoints', [])]
+        
+        # Conflicts at this entry where both flights are entering here
+        entry_callsigns = {f['callsign'] for f in entry_flights}
+        entry_conflicts = []
+        for c in conflicts:
+            if entry in c.get('waypoints', []):
+                if c['flight1'] in entry_callsigns and c['flight2'] in entry_callsigns:
+                    entry_conflicts.append(c)
         
         status = 'clear'
         if entry_conflicts:
@@ -150,6 +193,7 @@ def process_entry_points(entry_list, approaching_flights, conflicts, direction):
             'conflict_count': len(entry_conflicts),
             'status': status
         })
+    
     result.sort(key=lambda x: x['flight_count'], reverse=True)
     return result
 
@@ -164,7 +208,11 @@ def format_flight_for_strip(flight):
             waypoints.append(part)
     
     callsign = flight['callsign']
-    aircraft = flight.get('aircraft', '----')
+    
+    # Extract aircraft type only (before first /)
+    aircraft_full = flight.get('aircraft', '----')
+    aircraft = aircraft_full.split('/')[0] if '/' in aircraft_full else aircraft_full
+    
     fl = flight.get('fl', '---')
     entry_eta = flight.get('entry_eta', '----')
     waypoint_str = ' '.join(waypoints[:6]) if waypoints else route[:40]

@@ -173,9 +173,24 @@ function createATCStrip(flight, isConflict = false) {
     const strip = document.createElement('div');
     strip.className = 'atc-strip' + (isConflict ? ' conflict' : '');
     
-    // Format strip with pre-formatted text matching conflict_strip_atc.py output
-    // This is a simplified version - backend will provide formatted strips
-    strip.textContent = flight.strip_text || formatStripText(flight);
+    // Line 1: Callsign and Aircraft
+    const line1 = document.createElement('div');
+    line1.className = 'strip-line';
+    line1.innerHTML = `<span><strong>${flight.callsign}</strong></span><span>${flight.aircraft}</span>`;
+    
+    // Line 2: Route waypoints
+    const line2 = document.createElement('div');
+    line2.className = 'strip-line';
+    line2.textContent = flight.route.split(/\s+/).slice(0, 8).map(w => w.split('/')[0]).join(' ');
+    
+    // Line 3: FL and ETA
+    const line3 = document.createElement('div');
+    line3.className = 'strip-line';
+    line3.innerHTML = `<span>FL${flight.fl}</span><span>ETA ${flight.entry_eta}Z</span>`;
+    
+    strip.appendChild(line1);
+    strip.appendChild(line2);
+    strip.appendChild(line3);
     
     return strip;
 }
