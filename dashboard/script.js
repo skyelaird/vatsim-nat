@@ -153,15 +153,23 @@ function createConflictGroup(conflict) {
     const header = document.createElement('div');
     header.className = 'conflict-header';
     
-    const severity = conflict.is_overtake ? '🚨 CRITICAL - OVERTAKE' : 
-                     conflict.separation < 3 ? '🚨 CRITICAL' : '⚠️ WARNING';
+    let severity;
+    if (conflict.is_overtake) {
+        severity = `🚨 CRITICAL OVERTAKE - Separation CLOSING ${conflict.separation_closing.toFixed(1)} min`;
+    } else if (conflict.separation < 3) {
+        severity = '🚨 CRITICAL';
+    } else {
+        severity = '⚠️ WARNING';
+    }
     
-    header.textContent = `${severity} - Separation: ${conflict.separation} min at ${conflict.waypoint}`;
+    header.textContent = `${severity} - Separation: ${conflict.separation.toFixed(1)} min at ${conflict.waypoint}`;
     
     group.appendChild(header);
     
-    const strip1 = createATCStrip(conflict.flight1, true);
-    const strip2 = createATCStrip(conflict.flight2, true);
+    // Pass conflict waypoints to highlight them
+    const conflictWaypoints = [conflict.waypoint];
+    const strip1 = createATCStrip(conflict.flight1, true, conflictWaypoints);
+    const strip2 = createATCStrip(conflict.flight2, true, conflictWaypoints);
     
     group.appendChild(strip1);
     group.appendChild(strip2);
@@ -169,35 +177,118 @@ function createConflictGroup(conflict) {
     return group;
 }
 
-function createATCStrip(flight, isConflict = false) {
+function createATCStrip(flight, isConflict = false, conflictWaypoints = []) {
     const strip = document.createElement('div');
     strip.className = 'atc-strip' + (isConflict ? ' conflict' : '');
+    const isEB = flight.is_eastbound;
     
-    // Line 1: Callsign and Aircraft
-    const line1 = document.createElement('div');
-    line1.className = 'strip-line';
-    line1.innerHTML = `<span><strong>${flight.callsign}</strong></span><span>${flight.aircraft}</span>`;
+    // LEFT COLUMN (tombstone for WB, SELCAL for EB)
+    const leftCol = document.createElement('div');
+    if (!isEB) {
+        leftCol.className = 'strip-tombstone';
+        leftCol.innerHTML = `
+            <div class="strip-tombstone-callsign">${flight.callsign}</div>
+            <div class="strip-tombstone-aircraft">${flight.aircraft}</div>
+            <div class="strip-tombstone-mach">${flight.mach_gs}</div>
+            <div class="strip-tombstone-fl">${flight.fl_display}</div>
+        `;
+    } else {
+        leftCol.className = 'strip-selcal-column';
+        leftCol.textContent = flight.selcal || '';
+    }
     
-    // Line 2: Route waypoints
-    const line2 = document.createElement('div');
-    line2.className = 'strip-line';
-    line2.textContent = flight.route.split(/\s+/).slice(0, 8).map(w => w.split('/')[0]).join(' ');
+    // CENTER COLUMN (9 data columns)
+    const centerCol = document.createElement('div');
+    centerCol.className = 'strip-data-area';
     
-    // Line 3: FL and ETA
-    const line3 = document.createElement('div');
-    line3.className = 'strip-line';
-    line3.innerHTML = `<span>FL${flight.fl}</span><span>ETA ${flight.entry_eta}Z</span>`;
+    // Row 1: Waypoints - Fill cells based on direction
+    const wptRow = document.createElement('div');
+    wptRow.className = 'strip-waypoints-row';
     
-    strip.appendChild(line1);
-    strip.appendChild(line2);
-    strip.appendChild(line3);
+    // Create all 9 cells
+    const wptCells = [];
+    for (let i = 0; i < 9; i++) {
+        wptCells.push(document.createElement('div'));
+    }
     
+    // Fill cells: EB left-to-right (0-8), WB right-aligned from cell 8
+    for (let i = 0; i < flight.waypoints.length && i < 9; i++) {
+        const wpt = flight.waypoints[i];
+        // EB: fill from left (i), WB: fill from right (rightmost = cell 8)
+        const cellIndex = isEB ? i : (9 - flight.waypoints.length + i);
+        wptCells[cellIndex].textContent = wpt || '';
+        
+        // Highlight if this waypoint is in conflict
+        if (wpt && conflictWaypoints.includes(wpt)) {
+            wptCells[cellIndex].style.backgroundColor = '#8B0000';
+            wptCells[cellIndex].style.color = '#fff';
+            wptCells[cellIndex].style.fontWeight = 'bold';
+            wptCells[cellIndex].style.padding = '2px 4px';
+            wptCells[cellIndex].style.borderRadius = '3px';
+        }
+    }
+    
+    // Append all cells to row
+    wptCells.forEach(cell => wptRow.appendChild(cell));
+    centerCol.appendChild(wptRow);
+    
+    // Row 2: Times - Fill cells based on direction
+    const timeRow = document.createElement('div');
+    timeRow.className = 'strip-times-row';
+    
+    // Create all 9 cells
+    const timeCells = [];
+    for (let i = 0; i < 9; i++) {
+        timeCells.push(document.createElement('div'));
+    }
+    
+    // Fill cells: EB left-to-right (0-8), WB right-aligned from cell 8
+    for (let i = 0; i < flight.times.length && i < 9; i++) {
+        const time = flight.times[i];
+        const wpt = flight.waypoints[i];
+        // EB: fill from left (i), WB: fill from right (rightmost = cell 8)
+        const cellIndex = isEB ? i : (9 - flight.waypoints.length + i);
+        timeCells[cellIndex].textContent = time || '';
+        
+        // Highlight if this waypoint is in conflict
+        if (wpt && conflictWaypoints.includes(wpt)) {
+            timeCells[cellIndex].style.backgroundColor = '#8B0000';
+            timeCells[cellIndex].style.color = '#fff';
+            timeCells[cellIndex].style.padding = '2px 4px';
+            timeCells[cellIndex].style.borderRadius = '3px';
+        }
+    }
+    
+    // Append all cells to row
+    timeCells.forEach(cell => timeRow.appendChild(cell));
+    centerCol.appendChild(timeRow);
+    
+    // Row 3: Route - ALWAYS left-justified regardless of direction
+    const routeRow = document.createElement('div');
+    routeRow.className = 'strip-route-row';
+    routeRow.textContent = `${flight.departure} - ${flight.route_filed} - ${flight.destination}`;
+    routeRow.style.textAlign = 'left';  // Force left-justify for all
+    centerCol.appendChild(routeRow);
+    
+    // RIGHT COLUMN (SELCAL for WB, tombstone for EB)
+    const rightCol = document.createElement('div');
+    if (isEB) {
+        rightCol.className = 'strip-tombstone right';
+        rightCol.innerHTML = `
+            <div class="strip-tombstone-callsign">${flight.callsign}</div>
+            <div class="strip-tombstone-aircraft">${flight.aircraft}</div>
+            <div class="strip-tombstone-mach">${flight.mach_gs}</div>
+            <div class="strip-tombstone-fl">${flight.fl_display}</div>
+        `;
+    } else {
+        rightCol.className = 'strip-selcal-column';
+        rightCol.textContent = flight.selcal || '';
+    }
+    
+    strip.appendChild(leftCol);
+    strip.appendChild(centerCol);
+    strip.appendChild(rightCol);
     return strip;
-}
-
-function formatStripText(flight) {
-    // Simple strip formatting (backend will provide better version)
-    return `${flight.callsign.padEnd(10)} ${flight.aircraft.padEnd(8)} FL${flight.fl} ETA ${flight.entry_eta}`;
 }
 
 function startAutoRefresh() {

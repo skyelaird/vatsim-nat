@@ -171,7 +171,9 @@ def build_trajectory(flight):
             continue
         lat, lon = parse_waypoint(name)
         if lat and lon:
-            waypoints.append({'name': name, 'lat': lat, 'lon': lon})
+            # Filter NAT region only: 45N-65N, 60W-10W
+            if 45 <= lat <= 65 and -60 <= lon <= -10:
+                waypoints.append({'name': name, 'lat': lat, 'lon': lon})
     
     if len(waypoints) < 2:
         return None
@@ -181,14 +183,11 @@ def build_trajectory(flight):
     filed_mach = float(mach_m.group(1)) / 100 if mach_m else 0.85
     
     # Get FL from oceanic route (e.g., MALOT/M082F360 → FL360)
-    # This is the PLANNED NAT crossing level, not departure altitude
-    # Priority: 1) Oceanic route FL, 2) Filed altitude, 3) Default FL370
     fl_match = re.search(r'F(\d{3})', flight['oceanic_route'])
     if fl_match:
         fl = int(fl_match.group(1))  # Oceanic cruise level
     else:
         try:
-            # Fallback to filed altitude if no oceanic FL specified
             fl = int(flight['filed_altitude']) if flight['filed_altitude'] else 370
             if fl > 1000: fl //= 100
         except:
@@ -197,12 +196,28 @@ def build_trajectory(flight):
     tas = mach_to_tas(filed_mach, fl)
     gs = flight['gs'] if flight['gs'] and flight['gs'] > 100 else tas
     
-    # Build trajectory with ETAs
-    trajectory = []
-    cur_lat, cur_lon = flight['lat'], flight['lon']
-    cur_eta = datetime.now(UTC)
+    # Current aircraft position
+    current_lat = flight['lat']
+    current_lon = flight['lon']
+    current_time = datetime.now(UTC)
     
-    for wpt in waypoints:
+    # Find first waypoint AHEAD of current position
+    # Simple approach: find closest waypoint, assume we're heading toward remaining waypoints
+    min_dist = float('inf')
+    start_idx = 0
+    
+    for i, wpt in enumerate(waypoints):
+        dist = haversine(current_lat, current_lon, wpt['lat'], wpt['lon'])
+        if dist < min_dist:
+            min_dist = dist
+            start_idx = i
+    
+    # Build trajectory from current position to all FUTURE waypoints
+    trajectory = []
+    cur_lat, cur_lon = current_lat, current_lon
+    cur_eta = current_time
+    
+    for wpt in waypoints[start_idx:]:
         dist = haversine(cur_lat, cur_lon, wpt['lat'], wpt['lon'])
         cur_eta += timedelta(hours=dist / gs)
         trajectory.append({
@@ -216,7 +231,7 @@ def build_trajectory(flight):
         })
         cur_lat, cur_lon = wpt['lat'], wpt['lon']
     
-    return trajectory
+    return trajectory if len(trajectory) > 0 else None
 
 def is_wrong_way(callsign, fl, flights):
     """Check if flight is on wrong odd/even for direction"""
@@ -285,6 +300,7 @@ def detect_conflicts(trajectories, flights):
                         conflicts.append({
                             'waypoint': waypoint,
                             'waypoints': [waypoint],  # List of all conflicted waypoints
+                            'separations': [sep_min],  # Track separation at each waypoint
                             'flight1': f1['callsign'],
                             'flight2': f2['callsign'],
                             'fl': f1['fl'],
@@ -293,19 +309,36 @@ def detect_conflicts(trajectories, flights):
                             'mach1': f1['mach'],
                             'mach2': f2['mach'],
                             'separation_min': sep_min,
-                            'severity': 'HIGH' if sep_min < 3 else 'MEDIUM'
+                            'severity': 'HIGH' if sep_min < 3 else 'MEDIUM',
+                            'is_overtake': False
                         })
                     else:
                         # Add this waypoint to existing conflict
                         for conflict in conflicts:
                             if conflict['flight1'] in pair and conflict['flight2'] in pair:
                                 conflict['waypoints'].append(waypoint)
+                                conflict['separations'].append(sep_min)
                                 # Update to minimum separation
                                 if sep_min < conflict['separation_min']:
                                     conflict['separation_min'] = sep_min
                                     conflict['waypoint'] = waypoint  # Primary conflict point
                                     conflict['severity'] = 'HIGH' if sep_min < 3 else 'MEDIUM'
                                 break
+    
+    # Analyze overtakes: check separation trend across waypoints
+    for conflict in conflicts:
+        if len(conflict['separations']) >= 2:
+            first_sep = conflict['separations'][0]
+            last_sep = conflict['separations'][-1]
+            
+            # Separation closing by >1 minute = overtake
+            if first_sep - last_sep > 1.0:
+                conflict['is_overtake'] = True
+                conflict['separation_closing'] = first_sep - last_sep
+                conflict['severity'] = 'CRITICAL'  # Overtakes are always critical
+                conflict['type'] = 'OVERTAKE'
+            else:
+                conflict['type'] = 'LEVEL'
     
     # Add metadata
     for conflict in conflicts:
