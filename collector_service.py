@@ -34,8 +34,8 @@ logger.addHandler(console_handler)
 # NAT geographic boundaries (extended to capture Caribbean/South Atlantic)
 NAT_LAT_MIN = 25  # Down to Caribbean
 NAT_LAT_MAX = 66  # Up to Polar routes
-NAT_LON_WEST = -60
-NAT_LON_EAST = -10
+NAT_LON_WEST = -60  # Western boundary (Canada/US coast)
+NAT_LON_EAST = -15  # Eastern boundary (Europe/UK coast) - actual NAT boundary
 
 # Fuzzy zone boundaries (approximate, not strict lines)
 ENTRY_ZONE_WEST = -55  # Western boundary area
@@ -43,7 +43,7 @@ ENTRY_ZONE_EAST = -45
 MID_ZONE_WEST = -35    # Mid-Atlantic area
 MID_ZONE_EAST = -25
 EXIT_ZONE_WEST = -20   # Eastern boundary area
-EXIT_ZONE_EAST = -10
+EXIT_ZONE_EAST = -15   # Match NAT eastern boundary
 
 # Error tracking
 consecutive_errors = 0
@@ -79,6 +79,36 @@ def is_in_exit_zone(lon):
     """Check if in eastern exit zone (20W-10W)"""
     return EXIT_ZONE_WEST <= lon <= EXIT_ZONE_EAST
 
+def has_entered_nat(lat, lon, prev_lat, prev_lon, is_eastbound):
+    """
+    Check if flight has crossed the NAT entry boundary.
+
+    For eastbound: Crosses from east to west of -52W (typical western entry)
+    For westbound: Crosses from west to east of -15W (eastern boundary)
+
+    Args:
+        lat, lon: Current position
+        prev_lat, prev_lon: Previous position (can be None for first check)
+        is_eastbound: Flight direction
+
+    Returns:
+        True if flight just crossed the entry boundary
+    """
+    if prev_lat is None or prev_lon is None:
+        # First position check - verify we're inside the boundary
+        if is_eastbound:
+            return lon <= -45  # Inside western entry zone
+        else:
+            return lon <= -15  # At or inside eastern boundary
+
+    # Check if boundary was crossed between previous and current position
+    if is_eastbound:
+        # Eastbound crosses from east (-45W) to west (-52W or beyond)
+        return prev_lon > -45 and lon <= -45
+    else:
+        # Westbound crosses from west (-20W) to east (-15W)
+        return prev_lon < -15 and lon >= -15
+
 def get_vatsim_data():
     """Fetch current VATSIM data"""
     try:
@@ -94,17 +124,20 @@ def get_active_crossing(conn, callsign):
     """Check if callsign has an active (incomplete) crossing in database"""
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT crossing_id, crossed_mid
+        SELECT crossing_id, crossed_mid, entry_time, current_lat, current_lon
         FROM nat_crossings
         WHERE callsign = ? AND exit_time IS NULL
-        ORDER BY entry_time DESC
+        ORDER BY COALESCE(entry_time, last_update_time) DESC
         LIMIT 1
     """, (callsign,))
     row = cursor.fetchone()
     if row:
         return {
             'crossing_id': row[0],
-            'crossed_mid': row[1] == 1
+            'crossed_mid': row[1] == 1,
+            'entry_time': row[2],
+            'current_lat': row[3],
+            'current_lon': row[4]
         }
     return None
 
@@ -150,8 +183,8 @@ def create_crossing(conn, pilot, route_data, remarks_data, flight_plan):
         remarks_data['sur'],
         remarks_data['operator'],
         remarks_data['registration'],
-        now, lat, lon, fl, gs,
-        now, lat, lon, fl, gs  # Initialize current position same as entry
+        None, None, None, None, None,  # Entry data - set when boundary is crossed
+        now, lat, lon, fl, gs  # Initialize current position
     ))
     
     conn.commit()
@@ -198,8 +231,28 @@ def update_current_position(conn, crossing_id, pilot):
         SET last_update_time = ?, current_lat = ?, current_lon = ?, current_fl = ?, current_gs = ?
         WHERE crossing_id = ?
     """, (now, lat, lon, fl, gs, crossing_id))
-    
+
     conn.commit()
+
+def update_entry(conn, crossing_id, pilot):
+    """Set entry data when flight crosses NAT boundary"""
+    cursor = conn.cursor()
+
+    now = datetime.now(UTC).isoformat()
+    lat = pilot['latitude']
+    lon = pilot['longitude']
+    alt = pilot['altitude']
+    gs = pilot['groundspeed']
+    fl = int(alt / 100) if alt else None
+
+    cursor.execute("""
+        UPDATE nat_crossings
+        SET entry_time = ?, entry_lat = ?, entry_lon = ?, entry_fl = ?, entry_gs = ?
+        WHERE crossing_id = ?
+    """, (now, lat, lon, fl, gs, crossing_id))
+
+    conn.commit()
+    logger.info(f"{pilot['callsign']} entered NAT at {lat:.2f}N {lon:.2f}W FL{fl}")
 
 def complete_crossing(conn, crossing_id, pilot):
     """Mark crossing as complete with exit data"""
@@ -297,7 +350,16 @@ def process_flight(conn, pilot):
             # Update existing crossing
             # Always update current position for active crossings
             update_current_position(conn, active['crossing_id'], pilot)
-            
+
+            # Check if flight has entered NAT (if not already marked as entered)
+            if active['entry_time'] is None:
+                is_eastbound = departure[0] in 'KC'
+                prev_lat = active.get('current_lat')
+                prev_lon = active.get('current_lon')
+
+                if has_entered_nat(lat, lon, prev_lat, prev_lon, is_eastbound):
+                    update_entry(conn, active['crossing_id'], pilot)
+
             # Check for midpoint zone crossing
             if not active['crossed_mid'] and is_in_mid_zone(lon):
                 update_midpoint(conn, active['crossing_id'], pilot)
@@ -311,7 +373,7 @@ def main():
     
     logger.info("=" * 60)
     logger.info("VATSIM NAT Traffic Collector - Production Service v3")
-    logger.info("Region: 25N-66N, 60W-10W (includes Caribbean)")
+    logger.info("Region: 25N-66N, 60W-15W (includes Caribbean)")
     logger.info("Database-first model (crash-resistant)")
     logger.info("NAT track fetching: 1430 UTC (EB), 2230 UTC (WB)")
     logger.info("=" * 60)
