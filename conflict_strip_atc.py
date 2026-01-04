@@ -149,17 +149,69 @@ def get_active_crossings():
     conn.close()
     return flights
 
+def detect_entry_point(route, is_eastbound):
+    """
+    Detect the actual NAT entry point from oceanic route.
+
+    For eastbound: Westernmost boundary waypoint (lon < -40, smallest lon)
+    For westbound: Easternmost boundary waypoint (lon > -20, largest lon)
+
+    This handles cases like "LEKVA ADARA" where ADARA (-15W) is the
+    true entry for westbound, not LEKVA (-14W), because aircraft
+    approaching from the east encounters ADARA first.
+    """
+    # Expand OTS
+    for nat in re.findall(r'\bNAT[A-Z]\b', route):
+        wpts = expand_ots_track(nat)
+        if wpts:
+            route = route.replace(nat, ' '.join(wpts))
+
+    # Parse all boundary waypoints
+    # NAT boundaries: Western ~60W, Eastern ~15W
+    boundary_waypoints = []
+    for part in route.split():
+        if part in ['DCT'] or part.startswith('NAT'):
+            continue
+        name = part.split('/')[0]
+        # Skip 3-letter non-coordinate waypoints
+        if len(name) == 3 and not any(c.isdigit() for c in name):
+            continue
+        lat, lon = parse_waypoint(name)
+        if lat and lon:
+            # Check if this waypoint is AT or INSIDE the NAT boundary
+            if is_eastbound:
+                # Eastbound boundary: western side AT OR INSIDE (lon <= -40)
+                if lon <= -40:
+                    boundary_waypoints.append((name, lat, lon))
+            else:
+                # Westbound boundary: eastern side AT OR INSIDE (lon <= -15)
+                # This excludes waypoints OUTSIDE the boundary (like -14W, -10W)
+                if lon <= -15:
+                    boundary_waypoints.append((name, lat, lon))
+
+    if not boundary_waypoints:
+        return None, None, None
+
+    # For eastbound: return WESTERNMOST entry (most negative lon)
+    # For westbound: return EASTERNMOST entry (closest to -15W boundary)
+    if is_eastbound:
+        entry = min(boundary_waypoints, key=lambda w: w[2])  # Smallest lon (westernmost)
+    else:
+        entry = max(boundary_waypoints, key=lambda w: w[2])  # Largest lon (easternmost, closest to boundary)
+
+    return entry
+
 def build_trajectory(flight):
     if not flight['oceanic_route']:
         return None
-    
+
     # Expand OTS
     route = flight['oceanic_route']
     for nat in re.findall(r'\bNAT[A-Z]\b', route):
         wpts = expand_ots_track(nat)
         if wpts:
             route = route.replace(nat, ' '.join(wpts))
-    
+
     # Parse waypoints
     waypoints = []
     for part in route.split():
@@ -204,6 +256,9 @@ def build_trajectory(flight):
     # Determine flight direction
     is_eastbound = flight['departure'][0] in 'KC'
 
+    # Detect the actual entry point from the route
+    entry_name, entry_lat, entry_lon = detect_entry_point(flight['oceanic_route'], is_eastbound)
+
     # Find first waypoint AHEAD of current position based on direction
     start_idx = 0
     for i, wpt in enumerate(waypoints):
@@ -225,6 +280,16 @@ def build_trajectory(flight):
             if dist < min_dist:
                 min_dist = dist
                 start_idx = i
+
+    # If detected entry point is ahead of current position, ensure trajectory starts from entry
+    if entry_name and entry_lat and entry_lon:
+        # Find entry point in waypoints list
+        for i, wpt in enumerate(waypoints):
+            if wpt['name'] == entry_name:
+                # Only use entry as start if it's ahead of current waypoint
+                if i >= start_idx:
+                    start_idx = i
+                break
     
     # Build trajectory from current position to all FUTURE waypoints
     trajectory = []
