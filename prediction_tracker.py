@@ -61,6 +61,9 @@ class PredictionTracker:
                         'predicted_speed': prev.get('predicted_speed', 0),
                         'actual_speed': flight.get('gs', 0)
                     }
+                    # Store error data for get_suspect_flights() to retrieve
+                    prev['prediction_error_nm'] = round(error_nm, 1)
+                    prev['time_since_prediction'] = round(time_diff, 1)
         
         # Store new prediction if we have a trajectory
         if trajectory and len(trajectory) > 0:

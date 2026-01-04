@@ -28,8 +28,8 @@ def mach_to_tas(mach, fl):
 def expand_ots_track(track_id):
     if not track_id.startswith('NAT') or len(track_id) != 4:
         return None
-    
-    conn = sqlite3.connect(DB_PATH)
+
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     cursor = conn.cursor()
     today = datetime.now(UTC).date()
     
@@ -99,7 +99,7 @@ def simplify_aircraft_type(full_type):
     return match.group(1) if match else full_type.split('-')[0]
 
 def get_active_crossings():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -200,17 +200,31 @@ def build_trajectory(flight):
     current_lat = flight['lat']
     current_lon = flight['lon']
     current_time = datetime.now(UTC)
-    
-    # Find first waypoint AHEAD of current position
-    # Simple approach: find closest waypoint, assume we're heading toward remaining waypoints
-    min_dist = float('inf')
+
+    # Determine flight direction
+    is_eastbound = flight['departure'][0] in 'KC'
+
+    # Find first waypoint AHEAD of current position based on direction
     start_idx = 0
-    
     for i, wpt in enumerate(waypoints):
-        dist = haversine(current_lat, current_lon, wpt['lat'], wpt['lon'])
-        if dist < min_dist:
-            min_dist = dist
-            start_idx = i
+        if is_eastbound:
+            # Eastbound: next waypoint must be EAST of current position (less negative longitude)
+            if wpt['lon'] > current_lon:
+                start_idx = i
+                break
+        else:
+            # Westbound: next waypoint must be WEST of current position (more negative longitude)
+            if wpt['lon'] < current_lon:
+                start_idx = i
+                break
+    else:
+        # No waypoints ahead found - use closest waypoint as fallback
+        min_dist = float('inf')
+        for i, wpt in enumerate(waypoints):
+            dist = haversine(current_lat, current_lon, wpt['lat'], wpt['lon'])
+            if dist < min_dist:
+                min_dist = dist
+                start_idx = i
     
     # Build trajectory from current position to all FUTURE waypoints
     trajectory = []

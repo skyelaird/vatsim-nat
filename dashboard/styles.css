@@ -411,23 +411,101 @@ h1 {
     border-radius: 6px;
     padding: 12px 15px;
     margin-bottom: 10px;
-    font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
-    line-height: 1.6;
+    font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
     overflow-x: auto;
+    display: grid;
+    grid-template-columns: 100px 1fr 100px;
+    gap: 15px;
 }
 
 .atc-strip.conflict {
     border-color: #ffa726;
     border-width: 2px;
+    background: rgba(255, 167, 38, 0.1);
+}
+
+.strip-tombstone {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
+    border-right: 1px solid #555;
+    padding-right: 10px;
+}
+
+.strip-tombstone.right {
+    border-right: none;
+    border-left: 1px solid #555;
+    padding-left: 10px;
+    padding-right: 0;
+}
+
+.strip-tombstone-callsign {
+    font-size: 1.3rem;
+    font-weight: bold;
+    text-align: center;
+}
+
+.strip-tombstone-aircraft {
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.strip-tombstone-mach {
+    font-size: 0.8rem;
+    text-align: center;
+    margin-top: 4px;
+}
+
+.strip-tombstone-fl {
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.strip-selcal-column {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: #888;
+}
+
+.strip-data-area {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.strip-waypoints-row {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.strip-times-row {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 4px;
+    color: #5dade2;
+    font-size: 0.8rem;
+}
+
+.strip-route-row {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #444;
+    font-size: 0.9rem;
+    text-align: left;
+    align-self: end;
 }
 
 .strip-line {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 4px;
-}
-
-.strip-line:last-child {
-    margin-bottom: 0;
+    margin-bottom: 2px;
+    font-family: 'Courier New', monospace;
 }

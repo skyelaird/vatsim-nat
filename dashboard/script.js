@@ -5,6 +5,17 @@
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let refreshTimer = null;
 
+// Security: HTML escape function to prevent XSS
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initializeUI();
@@ -187,10 +198,10 @@ function createATCStrip(flight, isConflict = false, conflictWaypoints = []) {
     if (!isEB) {
         leftCol.className = 'strip-tombstone';
         leftCol.innerHTML = `
-            <div class="strip-tombstone-callsign">${flight.callsign}</div>
-            <div class="strip-tombstone-aircraft">${flight.aircraft}</div>
-            <div class="strip-tombstone-mach">${flight.mach_gs}</div>
-            <div class="strip-tombstone-fl">${flight.fl_display}</div>
+            <div class="strip-tombstone-callsign">${escapeHtml(flight.callsign)}</div>
+            <div class="strip-tombstone-aircraft">${escapeHtml(flight.aircraft)}</div>
+            <div class="strip-tombstone-mach">${escapeHtml(flight.mach_gs)}</div>
+            <div class="strip-tombstone-fl">${escapeHtml(flight.fl_display)}</div>
         `;
     } else {
         leftCol.className = 'strip-selcal-column';
@@ -275,10 +286,10 @@ function createATCStrip(flight, isConflict = false, conflictWaypoints = []) {
     if (isEB) {
         rightCol.className = 'strip-tombstone right';
         rightCol.innerHTML = `
-            <div class="strip-tombstone-callsign">${flight.callsign}</div>
-            <div class="strip-tombstone-aircraft">${flight.aircraft}</div>
-            <div class="strip-tombstone-mach">${flight.mach_gs}</div>
-            <div class="strip-tombstone-fl">${flight.fl_display}</div>
+            <div class="strip-tombstone-callsign">${escapeHtml(flight.callsign)}</div>
+            <div class="strip-tombstone-aircraft">${escapeHtml(flight.aircraft)}</div>
+            <div class="strip-tombstone-mach">${escapeHtml(flight.mach_gs)}</div>
+            <div class="strip-tombstone-fl">${escapeHtml(flight.fl_display)}</div>
         `;
     } else {
         rightCol.className = 'strip-selcal-column';

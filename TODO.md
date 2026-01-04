@@ -1,5 +1,49 @@
 # NAT DASHBOARD TODO
 
+## 🔴🔴🔴 CRITICAL - CODE REVIEW FINDINGS (2026-01-04)
+
+### SYNTAX ERROR - App Won't Run!
+- [ ] **FILE**: dashboard/app.py
+- [ ] **LINE 151**: Unterminated string literal - missing closing quote/parenthesis
+- [ ] **LINE 151-258**: Duplicate code - `filter_approaching_flights()` function appears TWICE
+- [ ] **IMPACT**: Python cannot compile app.py - dashboard is completely broken
+- [ ] **FIX IMMEDIATELY**: Remove duplicate function, fix regex pattern on line 151
+- [ ] **ERROR**:
+  ```
+  File "dashboard\app.py", line 151
+    if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]
+                ^
+  SyntaxError: unterminated string literal
+  ```
+
+### XSS Security Vulnerability
+- [ ] **RISK**: Cross-Site Scripting (XSS) via innerHTML
+- [ ] **LOCATION**: dashboard/script.js, dashboard/strip_helper.js, dashboard/analytics.js
+- [ ] **ISSUE**: Flight data (callsign, aircraft type) inserted via innerHTML without sanitization
+- [ ] **ATTACK**: Malicious VATSIM user could set callsign to `<script>alert('xss')</script>`
+- [ ] **FIX**: Use textContent instead of innerHTML, or sanitize with DOMPurify library
+- [ ] **FILES AFFECTED**:
+  - script.js: lines 189, 277 (tombstone HTML)
+  - strip_helper.js: lines 11, 58
+  - analytics.js: all chart rendering
+
+### JavaScript Function Conflict
+- [ ] **FILE CONFLICT**: dashboard/script.js vs dashboard/strip_helper.js
+- [ ] **ISSUE**: Both files define `createATCStrip()` with different implementations
+- [ ] **PROBLEM**: If both scripts loaded, one will override the other
+- [ ] **FIX**: Rename one function or consolidate into single implementation
+- [ ] **IMPACT**: Unknown which version is actually being used
+
+### Prediction Tracker Logic Bug
+- [ ] **FILE**: prediction_tracker.py
+- [ ] **ISSUE**: `update()` method calculates prediction_error_nm but never stores it back into self.flights
+- [ ] **LINE 56-63**: Error calculated and returned, but not persisted
+- [ ] **LINE 87**: get_suspect_flights() tries to access data['prediction_error_nm'] but it was never saved
+- [ ] **FIX**: Add `self.flights[callsign]['prediction_error_nm'] = error_nm` after line 62
+- [ ] **FIX**: Also store time_since_prediction and other error metadata
+
+---
+
 ## 🔴 CRITICAL - BLOCKING ISSUES
 
 ### Exclude Already-Engaged Flights
@@ -50,6 +94,30 @@
 ---
 
 ## 🟠 HIGH PRIORITY - DATA QUALITY
+
+### Path Traversal Security Risk
+- [ ] **FILE**: dashboard/app.py
+- [ ] **ROUTES**: `@app.route('/<path:path>')` on line 48
+- [ ] **ISSUE**: send_from_directory() with user-controlled path parameter
+- [ ] **RISK**: Attacker could request `../../etc/passwd` or other files
+- [ ] **FIX**: Validate path parameter, restrict to allowed file types
+- [ ] **MITIGATION**: Flask's send_from_directory() has some built-in protection, but explicit validation is safer
+
+### Missing Input Validation
+- [ ] **FILE**: dashboard/app.py
+- [ ] **ROUTE**: `/api/entry-strips/<entry_name>` (line 85)
+- [ ] **ISSUE**: No validation that entry_name is a valid entry point
+- [ ] **RISK**: Could cause errors, information disclosure, or DoS
+- [ ] **FIX**: Validate entry_name against EASTBOUND_ENTRIES + WESTBOUND_ENTRIES lists
+- [ ] **RESPONSE**: Return 404 for invalid entry points
+
+### Closest Waypoint Logic Error
+- [ ] **FILE**: conflict_strip_atc.py
+- [ ] **LINES**: 204-213 (build_trajectory function)
+- [ ] **ISSUE**: Uses CLOSEST waypoint as start_idx, not NEXT waypoint ahead
+- [ ] **PROBLEM**: If aircraft passes a waypoint, it might pick the one behind it
+- [ ] **FIX**: Need to determine forward direction and pick next waypoint AHEAD
+- [ ] **RELATED**: Might be contributing to "already-engaged flights" issue
 
 ### Prediction Tracker Integration
 - [x] **CREATED**: prediction_tracker.py with in-memory position tracking
@@ -117,6 +185,64 @@
 
 ---
 
+## 🟡 MEDIUM PRIORITY - PERFORMANCE & CODE QUALITY
+
+### Database Connection Management
+- [ ] **FILE**: conflict_strip_atc.py
+- [ ] **ISSUE**: Opens new database connection in every function (lines 32, 102)
+- [ ] **PERFORMANCE**: Expensive overhead for each call
+- [ ] **FIX**: Pass connection as parameter or use connection pooling
+- [ ] **ALTERNATIVE**: Use context manager for automatic connection cleanup
+
+### API Response Caching
+- [ ] **FILE**: dashboard/app.py
+- [ ] **ISSUE**: No caching on expensive operations
+- [ ] **IMPACT**: Trajectory building runs on EVERY request
+- [ ] **FIX**: Add caching with 30-60 second TTL on /api/entry-conflicts
+- [ ] **LIBRARY**: flask-caching or simple in-memory dict with timestamps
+
+### Conflict Detection Optimization
+- [ ] **FILE**: conflict_strip_atc.py
+- [ ] **LINES**: 250-350 (detect_conflicts function)
+- [ ] **ISSUE**: Nested loops O(n²) complexity for waypoint matching
+- [ ] **IMPROVEMENT**: Use spatial indexing (R-tree) or dictionary grouping
+- [ ] **NOTE**: Current implementation works, only optimize if performance issue observed
+
+### Inconsistent Database Timeouts
+- [ ] **FILES**: collector_service.py, conflict_strip_atc.py
+- [ ] **ISSUE**: Some connections use timeout=30.0, others use no timeout
+- [ ] **LOCATIONS**:
+  - collector_service.py line 55: timeout=30.0
+  - conflict_strip_atc.py line 32: no timeout
+- [ ] **FIX**: Standardize timeout value (30 seconds recommended)
+- [ ] **ADD**: Retry logic for timeout errors
+
+### Prediction Tracker Cleanup Never Called
+- [ ] **FILE**: prediction_tracker.py
+- [ ] **ISSUE**: cleanup() method defined but never invoked anywhere
+- [ ] **LINE**: 94-100 (cleanup function exists)
+- [ ] **FIX**: Call tracker.cleanup() periodically (every 30 min) in main loop
+- [ ] **OR**: Add to database housekeeping thread
+
+### Hard-Coded Configuration Values
+- [ ] **ISSUE**: Constants scattered across multiple files
+- [ ] **EXAMPLES**:
+  - NAT region boundaries: conflict_strip_atc.py line 174-175
+  - Refresh intervals: script.js line 5, analytics.js line 8
+  - Error thresholds: prediction_tracker.py line 22
+  - Time windows: collector_service.py lines 41-46
+- [ ] **FIX**: Centralize in config.py or environment variables
+- [ ] **BENEFIT**: Easier to adjust without hunting through code
+
+### Missing API Features
+- [ ] **NO HEALTH CHECK ENDPOINT**: Add /api/health for monitoring
+- [ ] **NO RATE LIMITING**: API vulnerable to abuse/DoS
+- [ ] **NO CORS HEADERS**: Might need for future deployments
+- [ ] **NO API VERSIONING**: Consider /api/v1/ prefix for future-proofing
+- [ ] **NO ERROR STANDARDS**: Inconsistent error response formats
+
+---
+
 ## 🟡 MEDIUM PRIORITY - UI/UX
 
 ### Clock Display
@@ -157,6 +283,51 @@
 - [ ] Show OTS track timeline
 - [ ] Track-by-track usage stats
 - [ ] Conflict rate per track
+
+---
+
+## 📊 CODE REVIEW SUMMARY (2026-01-04)
+
+**Total Issues Found: 20+**
+
+**By Severity:**
+- 🔴 **CRITICAL**: 5 (1 syntax error, 2 security, 2 logic bugs)
+- 🟠 **HIGH**: 4 (validation, error handling, waypoint logic)
+- 🟡 **MEDIUM**: 11 (performance, code quality, API features)
+
+**Top Priorities (Fix Immediately):**
+1. ✅ dashboard/app.py syntax error (line 151) - **BLOCKS ALL FUNCTIONALITY**
+2. ✅ dashboard/app.py duplicate code (lines 151-258) - **BLOCKS ALL FUNCTIONALITY**
+3. ⚠️ XSS vulnerability in innerHTML usage - **SECURITY RISK**
+4. ⚠️ Prediction tracker logic bug - **FEATURE BROKEN**
+5. ⚠️ JavaScript function conflict (createATCStrip) - **UNKNOWN IMPACT**
+
+**Security Issues:**
+- XSS via innerHTML (multiple files)
+- Path traversal risk in send_from_directory()
+- Missing input validation on API routes
+- SQL injection: ✅ **SAFE** (all queries use parameterized statements)
+
+**Performance Notes:**
+- Database connections inefficient but functional
+- No caching on expensive operations
+- Conflict detection could be optimized (not urgent)
+
+**Code Quality:**
+- Good: Parameterized SQL queries throughout
+- Good: Comprehensive error logging in collector
+- Needs: Configuration file for constants
+- Needs: API standards (health checks, versioning)
+
+**Files Reviewed:**
+- ✅ conflict_strip_atc.py (517 lines)
+- ✅ dashboard/app.py (341 lines) - **HAS SYNTAX ERROR**
+- ✅ dashboard/script.js (304 lines)
+- ✅ dashboard/analytics.js (229 lines)
+- ✅ dashboard/strip_helper.js (75 lines)
+- ✅ prediction_tracker.py (113 lines)
+- ✅ collector_service.py (420 lines)
+- ✅ route_parser.py (140 lines)
 
 ---
 

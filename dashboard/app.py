@@ -85,15 +85,26 @@ def get_entry_conflicts():
 @app.route('/api/entry-strips/<entry_name>')
 def get_entry_strips(entry_name):
     """Get detailed ATC strips for specific entry point"""
+    # Validate entry_name format (prevent injection, allow any valid waypoint)
+    # Accept:
+    #   - Named waypoints: AGORI, SUNOT (4-6 alphanumeric, ARINC 424)
+    #   - Full lat/lon: 57N050W, 5730N05000W
+    #   - Short format: 50/20, 5730/50
+    valid_format = re.match(r'^([A-Z0-9]{4,6}|\d{2,4}[NS]\d{3,5}[EW]|\d{2,4}/\d{2,3})$', entry_name)
+    if not valid_format:
+        # Log for pattern improvement - might be legitimate waypoint we missed
+        print(f"⚠️  Blocked waypoint format: '{entry_name}' - check if legitimate")
+        return jsonify({'error': f'Invalid waypoint format: {entry_name}'}), 400
+
     try:
         flights = get_active_crossings()
         trajectories = [build_trajectory(f) for f in flights]
         trajectories = [t for t in trajectories if t]
         conflicts = detect_conflicts(trajectories, flights)
-        
+
         now = datetime.now(UTC)
         approaching = filter_approaching_flights(flights, trajectories, now, 60)
-        
+
         # Filter for THIS entry point only from approaching flights
         entry_flights = [f for f in approaching if f.get('entry_fix') == entry_name]
         
@@ -128,9 +139,9 @@ def get_entry_strips(entry_name):
         })
     except Exception as e:
         import traceback
-        print(f"Error: {e}")
+        print(f"❌ Error processing entry point '{entry_name}': {e}")
         print(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'entry_name': entry_name}), 500
 
 def filter_approaching_flights(flights, trajectories, now, minutes_ahead):
     """Filter flights approaching NAT entry within specified minutes"""
@@ -148,93 +159,10 @@ def filter_approaching_flights(flights, trajectories, now, minutes_ahead):
         time_to_entry = (entry_eta - now).total_seconds() / 60
         
         # Skip if "entry" is just a lat/lon coordinate (not a real entry fix)
-        if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]
-
-def process_entry_points(entry_list, approaching_flights, conflicts, direction):
-    """Process entry points - count flights ENTERING at each fix"""
-    result = []
-    
-    # Debug: Show all entry points being used
-    all_entries = {}
-    for f in approaching_flights:
-        entry = f.get('entry_fix')
-        all_entries[entry] = all_entries.get(entry, 0) + 1
-    print(f"\n{direction} - All entries in use: {all_entries}")
-    print(f"{direction} - Monitoring: {entry_list}")
-    
-    for entry in entry_list:
-        # Flights entering at THIS specific entry point
-        entry_flights = [f for f in approaching_flights if f.get('entry_fix') == entry]
-        
-        # Conflicts at this entry where both flights are entering here
-        entry_callsigns = {f['callsign'] for f in entry_flights}
-        entry_conflicts = []
-        for c in conflicts:
-            if entry in c.get('waypoints', []):
-                if c['flight1'] in entry_callsigns and c['flight2'] in entry_callsigns:
-                    entry_conflicts.append(c)
-        
-        status = 'clear'
-        if entry_conflicts:
-            critical = any(
-                c.get('separation_min', 999) < 3 or 'overtake' in c.get('type', '').lower()
-                for c in entry_conflicts
-            )
-            status = 'critical' if critical else 'warning'
-        
-        result.append({
-            'name': entry,
-            'flight_count': len(entry_flights),
-            'conflict_count': len(entry_conflicts),
-            'status': status
-        })
-    
-    result.sort(key=lambda x: x['flight_count'], reverse=True)
-    return result
-
-def format_flight_for_strip(flight):
-    """Format flight data for ATC strip display"""
-    route = flight.get('oceanic_route', '')
-    waypoints = []
-    for part in route.split():
-        if '/' in part:
-            waypoints.append(part.split('/')[0])
-        elif re.match(r'^\d{2}N\d{3}W', part):
-            waypoints.append(part)
-    
-    callsign = flight['callsign']
-    
-    # Extract aircraft type only (before first /)
-    aircraft_full = flight.get('aircraft', '----')
-    aircraft = aircraft_full.split('/')[0] if '/' in aircraft_full else aircraft_full
-    
-    fl = flight.get('fl', '---')
-    entry_eta = flight.get('entry_eta', '----')
-    waypoint_str = ' '.join(waypoints[:6]) if waypoints else route[:40]
-    strip_text = f"{callsign:8s}  {aircraft:8s}  {waypoint_str:50s}  FL{fl}  ETA {entry_eta}"
-    
-    return {
-        'callsign': callsign,
-        'aircraft': aircraft,
-        'fl': fl,
-        'entry_eta': entry_eta,
-        'route': route,
-        'strip_text': strip_text
-    }
-
-if __name__ == '__main__':
-    print("=" * 70)
-    print("NAT Conflict Dashboard Server")
-    print("=" * 70)
-    print(f"\nDatabase: {DB_PATH}")
-    print(f"Dashboard: http://localhost:5000")
-    print("\nPress Ctrl+C to stop")
-    print("=" * 70)
-    app.run(host='0.0.0.0', port=5000, debug=True)
-, entry_waypoint):
+        if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]$', entry_waypoint):
             print(f"Skipping {flight['callsign']}: entering at coordinate {entry_waypoint} (not a named fix)")
             continue
-        
+
         print(f"Flight {flight['callsign']}: entry={entry_waypoint}, ETA={entry_eta.strftime('%H%M')}, time={time_to_entry:.1f}min")
         
         if 0 <= time_to_entry <= minutes_ahead:

@@ -3,22 +3,210 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analytics - NAT Dashboard</title>
+    <title>NAT Analytics</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        .analytics-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .analytics-menu {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .menu-item {
+            padding: 10px 20px;
+            background: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .menu-item:hover {
+            background: #3d3d3d;
+        }
+
+        .menu-item.active {
+            background: #5dade2;
+            border-color: #5dade2;
+            color: #1a1a1a;
+        }
+
+        .analytics-section {
+            display: none;
+        }
+
+        .analytics-section.active {
+            display: block;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #5dade2;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .chart-container {
+            background: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: #5dade2;
+        }
+
+        .bar-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .bar-label {
+            width: 80px;
+            text-align: right;
+            font-size: 0.9rem;
+        }
+
+        .bar-fill {
+            height: 25px;
+            background: linear-gradient(90deg, #5dade2, #3a7ca5);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            color: #fff;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .issue-list {
+            background: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .issue-item {
+            padding: 10px;
+            background: #1a1a1a;
+            border-left: 3px solid #ff6b6b;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .issue-item.warning {
+            border-left-color: #ffa726;
+        }
+
+        .issue-item.info {
+            border-left-color: #5dade2;
+        }
+
+        .back-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #444;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #fff;
+            margin-bottom: 20px;
+        }
+
+        .back-button:hover {
+            background: #555;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Analytics & Traffic Demand</h1>
-            <div class="header-controls">
-                <button class="analytics-btn" onclick="location.href='/'">← Back to Dashboard</button>
-            </div>
-        </header>
+    <div class="analytics-container">
+        <a href="/" class="back-button">← Back to Dashboard</a>
         
-        <div style="text-align: center; padding: 60px; color: #aaa;">
-            <h2>Coming Soon</h2>
-            <p>Traffic demand heatmaps, waypoint analysis, and performance metrics.</p>
+        <h1 style="color: #5dade2; margin-bottom: 10px;">NAT Traffic Analytics</h1>
+        <p style="color: #aaa; margin-bottom: 30px;" id="timestamp">Loading...</p>
+
+        <div class="analytics-menu">
+            <div class="menu-item active" data-section="qa">Data Quality</div>
+            <div class="menu-item" data-section="traffic">Traffic Flow</div>
+            <div class="menu-item" data-section="levels">Flight Levels</div>
+            <div class="menu-item" data-section="entries">Entry Points</div>
+        </div>
+
+        <!-- QA Section -->
+        <div class="analytics-section active" id="qa-section">
+            <div class="stat-grid" id="qa-stats"></div>
+            <div id="qa-issues"></div>
+        </div>
+
+        <!-- Traffic Flow Section -->
+        <div class="analytics-section" id="traffic-section">
+            <div class="stat-grid" id="traffic-stats"></div>
+            <div class="chart-container">
+                <div class="chart-title">Traffic by Hour (Last 24h)</div>
+                <div class="bar-chart" id="hourly-chart"></div>
+            </div>
+        </div>
+
+        <!-- Flight Levels Section -->
+        <div class="analytics-section" id="levels-section">
+            <div class="stat-grid" id="levels-stats"></div>
+            <div class="chart-container">
+                <div class="chart-title">Flight Level Distribution</div>
+                <div class="bar-chart" id="fl-chart"></div>
+            </div>
+        </div>
+
+        <!-- Entry Points Section -->
+        <div class="analytics-section" id="entries-section">
+            <div class="chart-container">
+                <div class="chart-title">Western Entry Points (Eastbound)</div>
+                <div class="bar-chart" id="west-entries-chart"></div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Eastern Entry Points (Westbound)</div>
+                <div class="bar-chart" id="east-entries-chart"></div>
+            </div>
         </div>
     </div>
+
+    <script src="analytics.js"></script>
 </body>
 </html>
