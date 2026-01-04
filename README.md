@@ -35,14 +35,22 @@ python sanity_check.py
 
 ## Production Deployment
 
-```powershell
-# Install as Windows scheduled task (run as Administrator)
-.\Create-TaskScheduler.ps1
-Start-ScheduledTask -TaskName "VATSIM NAT Traffic Collector"
+**Recommended: NSSM Windows Service** (auto-start, auto-restart, runs 24/7)
 
-# Monitor
+```cmd
+# Install service (run as Administrator)
+# See INSTALL_SERVICE.md for complete instructions
+install_service_FINAL.bat
+
+# Check status
+check_service_status.bat
+
+# Or use Windows service commands
+sc query NATCollector
 Get-Content nat_collector.log -Tail 50 -Wait
 ```
+
+**Alternative: Task Scheduler** (see INSTALL_SERVICE.md for setup)
 
 ---
 
@@ -537,6 +545,16 @@ Data collection for VATSIM network analysis and virtual ATC training purposes.
 ---
 
 ## Change Log
+
+### v3.1 (2026-01-04) - Critical Bug Fixes
+- 🐛 **FIXED: Collector entry detection** - Flights now marked "entered" only at actual NAT boundaries
+  - Updated NAT_LON_EAST from -10W to -15W (actual boundary)
+  - Entry_time set to NULL initially, updated only when boundary crossed
+  - Added `has_entered_nat()` and `update_entry()` functions
+- ✅ **Database migration** - Preserved 421 historical crossings, fixed 82 incorrect entry times
+- ✅ **NSSM service installation** - 24/7 operation with auto-restart
+- ✅ **Entry point detection** - Added `detect_entry_point()` for accurate boundary waypoint identification
+- ✅ **Dashboard fixes** - Corrected entry point geographical groupings
 
 ### v3.0 (2026-01-01)
 - ✅ OTS track fetching automation
