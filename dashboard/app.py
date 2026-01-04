@@ -152,30 +152,56 @@ def filter_approaching_flights(flights, trajectories, now, minutes_ahead):
     """Filter flights approaching NAT entry within specified minutes"""
     import re
     approaching = []
-    
+
+    # Get entry times from database to identify already-engaged flights
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT callsign, entry_fix,
+               CAST((julianday('now') - julianday(entry_time)) * 1440 AS INTEGER) as minutes_since_entry
+        FROM nat_crossings
+        WHERE exit_time IS NULL AND entry_time IS NOT NULL
+    """)
+    entry_data = {row[0]: {'fix': row[1], 'minutes': row[2]} for row in cursor.fetchall()}
+    conn.close()
+
     for flight in flights:
-        traj = next((t for t in trajectories if t and len(t) > 0 and t[0]['callsign'] == flight['callsign']), None)
+        callsign = flight['callsign']
+        traj = next((t for t in trajectories if t and len(t) > 0 and t[0]['callsign'] == callsign), None)
         if not traj:
             continue
-        
+
         entry_point = traj[0]
         entry_waypoint = entry_point['waypoint']
         entry_eta = entry_point['eta']
         time_to_entry = (entry_eta - now).total_seconds() / 60
-        
-        # Skip if "entry" is just a lat/lon coordinate (not a real entry fix)
+
+        # PRIORITY 1: Check if already engaged in NAT (entry_time exists and >10 min ago)
+        if callsign in entry_data:
+            minutes_engaged = entry_data[callsign]['minutes']
+            actual_entry = entry_data[callsign]['fix']
+            if minutes_engaged > 10:
+                print(f"Skipping {callsign}: already engaged in NAT ({minutes_engaged} min ago at {actual_entry})")
+                continue
+
+        # PRIORITY 2: Skip if "entry" is just a lat/lon coordinate (not a real entry fix)
         if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]$', entry_waypoint):
-            print(f"Skipping {flight['callsign']}: entering at coordinate {entry_waypoint} (not a named fix)")
+            print(f"Skipping {callsign}: coordinate entry {entry_waypoint} (not named fix)")
             continue
 
-        print(f"Flight {flight['callsign']}: entry={entry_waypoint}, ETA={entry_eta.strftime('%H%M')}, time={time_to_entry:.1f}min")
-        
+        print(f"Flight {callsign}: entry={entry_waypoint}, ETA={entry_eta.strftime('%H%M')}, time={time_to_entry:.1f}min")
+
+        # PRIORITY 3: Check time window
         if 0 <= time_to_entry <= minutes_ahead:
             flight['entry_fix'] = entry_waypoint
             flight['entry_eta'] = entry_eta.strftime('%H%M')
             flight['trajectory'] = traj
             approaching.append(flight)
-    
+        elif time_to_entry < 0:
+            print(f"Skipping {callsign}: already passed {entry_waypoint} ({abs(int(time_to_entry))} min ago)")
+        else:
+            print(f"Skipping {callsign}: too far from {entry_waypoint} ({int(time_to_entry)} min away)")
+
     print(f"\nTotal approaching at named fixes: {len(approaching)} flights")
     return approaching
 
@@ -407,48 +433,66 @@ def qa_filtering():
         trajectories = [build_trajectory(f) for f in flights]
 
         now = datetime.now(UTC)
+
+        # Get entry data for already-engaged detection
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT callsign, entry_fix,
+                   CAST((julianday('now') - julianday(entry_time)) * 1440 AS INTEGER) as minutes_since_entry
+            FROM nat_crossings
+            WHERE exit_time IS NULL AND entry_time IS NOT NULL
+        """)
+        entry_data = {row[0]: {'fix': row[1], 'minutes': row[2]} for row in cursor.fetchall()}
+        conn.close()
+
         approaching = filter_approaching_flights(flights, trajectories, now, 60)
 
-        # Track filtering reasons
+        # Track filtering reasons (categorized)
+        already_engaged = []
         no_trajectory = []
-        not_approaching = []
-        invalid_entry = []
+        coordinate_entry = []
+        outside_time_window = []
         displayed = []
 
         for i, flight in enumerate(flights):
             callsign = flight['callsign']
             traj = trajectories[i]
 
-            if not traj or len(traj) == 0:
-                no_trajectory.append(callsign)
-            elif flight not in approaching:
-                # Check why not approaching
-                if traj:
-                    entry_point = traj[0]
-                    entry_eta = entry_point['eta']
-                    time_to_entry = (entry_eta - now).total_seconds() / 60
-
-                    if time_to_entry < 0:
-                        not_approaching.append({
-                            'callsign': callsign,
-                            'reason': f'Already passed entry ({abs(int(time_to_entry))} min ago)'
-                        })
-                    elif time_to_entry > 60:
-                        not_approaching.append({
-                            'callsign': callsign,
-                            'reason': f'Too far from entry ({int(time_to_entry)} min away)'
-                        })
-                    else:
-                        # Check if entry is coordinate vs named fix
-                        entry_waypoint = entry_point['waypoint']
-                        if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]$', entry_waypoint):
-                            invalid_entry.append({
-                                'callsign': callsign,
-                                'entry': entry_waypoint,
-                                'reason': 'Entry is coordinate, not named fix'
-                            })
-            else:
+            if flight in approaching:
                 displayed.append(callsign)
+                continue
+
+            # Determine WHY filtered out (same priority as filter function)
+            if callsign in entry_data and entry_data[callsign]['minutes'] > 10:
+                already_engaged.append({
+                    'callsign': callsign,
+                    'entry_fix': entry_data[callsign]['fix'],
+                    'minutes_engaged': entry_data[callsign]['minutes']
+                })
+            elif not traj or len(traj) == 0:
+                no_trajectory.append(callsign)
+            elif traj:
+                entry_point = traj[0]
+                entry_waypoint = entry_point['waypoint']
+                entry_eta = entry_point['eta']
+                time_to_entry = (entry_eta - now).total_seconds() / 60
+
+                if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]$', entry_waypoint):
+                    coordinate_entry.append({
+                        'callsign': callsign,
+                        'entry': entry_waypoint
+                    })
+                elif time_to_entry < 0:
+                    outside_time_window.append({
+                        'callsign': callsign,
+                        'reason': f'Already passed {entry_waypoint} ({abs(int(time_to_entry))} min ago)'
+                    })
+                elif time_to_entry > 60:
+                    outside_time_window.append({
+                        'callsign': callsign,
+                        'reason': f'Too far from {entry_waypoint} ({int(time_to_entry)} min away)'
+                    })
 
         # Group displayed flights by entry point
         entry_breakdown = {}
@@ -458,20 +502,32 @@ def qa_filtering():
                 entry_breakdown[entry] = []
             entry_breakdown[entry].append(flight['callsign'])
 
+        # Entry point coverage validation
+        all_entry_fixes = EASTBOUND_ENTRIES + WESTBOUND_ENTRIES
+        covered_entries = set(entry_breakdown.keys())
+        empty_entries = [e for e in all_entry_fixes if e not in covered_entries]
+
         return jsonify({
             'timestamp': datetime.now(UTC).isoformat(),
             'summary': {
                 'total_in_db': len(flights),
                 'displayed_on_main': len(displayed),
-                'filtered_out': len(flights) - len(displayed)
+                'filtered_out': len(flights) - len(displayed),
+                'entry_points_active': len(covered_entries),
+                'entry_points_total': len(all_entry_fixes)
             },
-            'filtering_reasons': {
+            'skip_reasons': {
+                'already_engaged': already_engaged,
                 'no_trajectory': no_trajectory,
-                'not_approaching': not_approaching,
-                'invalid_entry_point': invalid_entry
+                'coordinate_entry': coordinate_entry,
+                'outside_time_window': outside_time_window
             },
             'displayed_flights': displayed,
-            'flights_per_entry': entry_breakdown
+            'flights_per_entry': entry_breakdown,
+            'entry_point_coverage': {
+                'active': list(covered_entries),
+                'empty': empty_entries
+            }
         })
 
     except Exception as e:
@@ -626,6 +682,224 @@ def qa_flight_detail(callsign):
     except Exception as e:
         import traceback
         print(f"❌ Error in flight detail: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/qa/collector-health')
+def collector_health():
+    """
+    Validate collector_service.py health
+
+    Checks:
+    - Entry time population rate
+    - Position update frequency
+    - Tracking continuity (no duplicates/gaps)
+    - Data field completeness
+    - Position/track consistency
+    - VATSIM network coverage (all NAT-bound flights captured)
+    """
+    try:
+        import requests
+
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get all active crossings
+        cursor.execute("""
+            SELECT callsign, entry_time, last_update_time,
+                   current_lat, current_lon, oceanic_route, selcal, current_gs,
+                   CAST((julianday('now') - julianday(last_update_time)) * 1440 AS INTEGER) as minutes_stale
+            FROM nat_crossings
+            WHERE exit_time IS NULL
+        """)
+        active_flights = [dict(row) for row in cursor.fetchall()]
+
+        total_active = len(active_flights)
+
+        # 1. Entry time population
+        with_entry_time = sum(1 for f in active_flights if f['entry_time'] is not None)
+        entry_time_rate = round(with_entry_time / total_active * 100, 1) if total_active > 0 else 0
+
+        # 2. Update frequency (should be ~5 min)
+        stale_flights = [f for f in active_flights if f['minutes_stale'] > 15]
+        update_health = []
+        for f in active_flights:
+            if f['minutes_stale'] > 15:
+                update_health.append({
+                    'callsign': f['callsign'],
+                    'minutes_stale': f['minutes_stale'],
+                    'status': 'STALE' if f['minutes_stale'] > 30 else 'WARNING'
+                })
+
+        # 3. Tracking continuity - check for duplicate callsigns
+        cursor.execute("""
+            SELECT callsign, COUNT(*) as count,
+                   GROUP_CONCAT(entry_time) as entry_times
+            FROM nat_crossings
+            WHERE exit_time IS NULL
+            GROUP BY callsign
+            HAVING count > 1
+        """)
+        duplicates = [dict(row) for row in cursor.fetchall()]
+
+        # 4. Data field completeness
+        missing_fields = []
+        for f in active_flights:
+            issues = []
+            if not f['oceanic_route']:
+                issues.append('oceanic_route')
+            if not f['selcal']:
+                issues.append('selcal')
+            if f['current_lat'] is None or f['current_lon'] is None:
+                issues.append('position')
+            if f['current_gs'] is None or f['current_gs'] <= 0:
+                issues.append('groundspeed')
+
+            if issues:
+                missing_fields.append({
+                    'callsign': f['callsign'],
+                    'missing': issues
+                })
+
+        # 5. Position/track consistency - check for flights with unrealistic speeds
+        cursor.execute("""
+            SELECT callsign, current_lat, current_lon, current_gs,
+                   LAG(current_lat) OVER (PARTITION BY callsign ORDER BY last_update_time) as prev_lat,
+                   LAG(current_lon) OVER (PARTITION BY callsign ORDER BY last_update_time) as prev_lon,
+                   CAST((julianday(last_update_time) - julianday(LAG(last_update_time) OVER (PARTITION BY callsign ORDER BY last_update_time))) * 1440 AS INTEGER) as minutes_since_prev
+            FROM nat_crossings
+            WHERE exit_time IS NULL
+        """)
+        position_checks = [dict(row) for row in cursor.fetchall()]
+
+        position_anomalies = []
+        for check in position_checks:
+            if check['prev_lat'] and check['prev_lon'] and check['minutes_since_prev']:
+                # Calculate distance traveled
+                from conflict_strip_atc import haversine
+                dist_nm = haversine(check['prev_lat'], check['prev_lon'], check['current_lat'], check['current_lon'])
+
+                # Calculate implied speed (nm per minute * 60 = knots)
+                if check['minutes_since_prev'] > 0:
+                    implied_speed = (dist_nm / check['minutes_since_prev']) * 60
+
+                    # Flag if implied speed differs significantly from reported GS
+                    if check['current_gs'] and abs(implied_speed - check['current_gs']) > 100:
+                        position_anomalies.append({
+                            'callsign': check['callsign'],
+                            'reported_gs': check['current_gs'],
+                            'implied_speed': round(implied_speed, 1),
+                            'time_span': check['minutes_since_prev'],
+                            'distance_nm': round(dist_nm, 1)
+                        })
+
+        # 6. VATSIM network coverage - check if we're missing any NAT-bound flights
+        network_coverage = {
+            'vatsim_accessible': False,
+            'missing_flights': [],
+            'coverage_rate': 100
+        }
+
+        try:
+            # Fetch live VATSIM data
+            vatsim_url = 'https://data.vatsim.net/v3/vatsim-data.json'
+            response = requests.get(vatsim_url, timeout=10)
+            vatsim_data = response.json()
+
+            # Get callsigns in our database
+            db_callsigns = set(f['callsign'] for f in active_flights)
+
+            # Check NAT entry points for flights we might be missing
+            all_entry_fixes = EASTBOUND_ENTRIES + WESTBOUND_ENTRIES
+            missing_flights = []
+
+            for pilot in vatsim_data.get('pilots', []):
+                callsign = pilot.get('callsign', '')
+                flight_plan = pilot.get('flight_plan')
+
+                if not flight_plan or not flight_plan.get('route'):
+                    continue
+
+                route = flight_plan['route']
+
+                # Check if route contains any NAT entry points
+                has_nat_entry = any(entry in route for entry in all_entry_fixes)
+
+                if has_nat_entry and callsign not in db_callsigns:
+                    # Flight has NAT entry but not in our DB
+                    missing_flights.append({
+                        'callsign': callsign,
+                        'route_snippet': route[:100] + '...' if len(route) > 100 else route
+                    })
+
+            network_coverage['vatsim_accessible'] = True
+            network_coverage['missing_flights'] = missing_flights[:20]  # Top 20 only
+            total_nat_bound = len(db_callsigns) + len(missing_flights)
+            network_coverage['coverage_rate'] = round(len(db_callsigns) / total_nat_bound * 100, 1) if total_nat_bound > 0 else 100
+
+        except Exception as vatsim_error:
+            print(f"⚠️ Could not fetch VATSIM data for coverage check: {vatsim_error}")
+            network_coverage['error'] = str(vatsim_error)
+
+        conn.close()
+
+        # Build health summary
+        health_score = 100
+        issues = []
+
+        if entry_time_rate < 90:
+            health_score -= 20
+            issues.append(f'Low entry_time population ({entry_time_rate}%)')
+
+        if len(stale_flights) > total_active * 0.1:
+            health_score -= 20
+            issues.append(f'{len(stale_flights)} stale flights (>{total_active * 0.1:.0f} threshold)')
+
+        if duplicates:
+            health_score -= 30
+            issues.append(f'{len(duplicates)} duplicate callsigns detected')
+
+        if len(missing_fields) > total_active * 0.2:
+            health_score -= 15
+            issues.append(f'{len(missing_fields)} flights missing required fields')
+
+        if position_anomalies:
+            health_score -= 15
+            issues.append(f'{len(position_anomalies)} position/track anomalies')
+
+        # Check network coverage
+        if network_coverage['vatsim_accessible']:
+            if network_coverage['coverage_rate'] < 90:
+                health_score -= 20
+                issues.append(f"Low VATSIM coverage ({network_coverage['coverage_rate']}% - missing {len(network_coverage['missing_flights'])} flights)")
+
+        return jsonify({
+            'timestamp': datetime.now(UTC).isoformat(),
+            'health_score': max(health_score, 0),
+            'status': 'HEALTHY' if health_score >= 80 else 'WARNING' if health_score >= 60 else 'CRITICAL',
+            'summary': {
+                'total_active_flights': total_active,
+                'entry_time_population_rate': f'{entry_time_rate}%',
+                'stale_flights': len(stale_flights),
+                'duplicate_tracks': len(duplicates),
+                'incomplete_data': len(missing_fields),
+                'position_anomalies': len(position_anomalies),
+                'network_coverage_rate': f"{network_coverage['coverage_rate']}%" if network_coverage['vatsim_accessible'] else 'N/A'
+            },
+            'issues': issues if issues else ['No issues detected'],
+            'network_coverage': network_coverage,
+            'details': {
+                'stale_flights': update_health[:10],  # Top 10 only
+                'duplicates': duplicates,
+                'missing_fields': missing_fields[:10],  # Top 10 only
+                'position_anomalies': position_anomalies[:10]  # Top 10 only
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in collector-health: {e}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
