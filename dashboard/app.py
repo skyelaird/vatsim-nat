@@ -26,18 +26,17 @@ else:
 
 # NAT entry points - COMPREHENSIVE lists
 EASTBOUND_ENTRIES = [
-    # Canadian entries (west side)
-    'DOGAL', 'LIMRI', 'RESNO', 'ELSIR', 'RATKA', 'JOOPY',
-    # US entries (west side)
-    'TUDEP', 'ALLRY', 'NICSO', 'SUPRY', 'DINIM', 'PORTI',
-    'KODIK', 'DIRGI', 'MUSVA'
+    # West side entries (Canada/US) - lon < -40
+    'ELSIR', 'JOOPY', 'TUDEP', 'ALLRY', 'NICSO', 'SUPRY',
+    'PORTI', 'KODIK', 'MUSVA',
+    'RIKAL', 'NEEKO', 'LOMSI', 'JANJO', 'SOORY'
 ]
 
 WESTBOUND_ENTRIES = [
-    # UK/Ireland exits (east side for westbound = entry points)
-    'RIKAL', 'NEEKO', 'LOMSI', 'JANJO', 'PIKIL',
-    'MALOT', 'GISTI', 'SOORY', 'BEDRA', 'NERTU',
-    'BAKUR', 'LEKVA', 'NASBA', 'RENDL'
+    # East side entries (UK/Ireland/Iceland) - lon > -20
+    'DOGAL', 'LIMRI', 'RESNO', 'DINIM', 'RATKA',
+    'PIKIL', 'MALOT', 'GISTI', 'BEDRA', 'NERTU',
+    'BAKUR', 'LEKVA', 'NASBA'
 ]
 
 @app.route('/')
