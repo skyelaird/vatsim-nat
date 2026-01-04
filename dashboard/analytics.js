@@ -1,9 +1,20 @@
 // NAT Analytics JavaScript
 
+// Security: HTML escape function to prevent XSS
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return String(unsafe)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     initializeMenu();
     loadAllAnalytics();
-    
+
     // Auto-refresh every 5 minutes
     setInterval(loadAllAnalytics, 5 * 60 * 1000);
 });
@@ -60,7 +71,7 @@ function loadQA() {
             if (data.issues.trajectory_failures.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Trajectory Build Failures</div>';
                 data.issues.trajectory_failures.forEach(issue => {
-                    issuesHtml += `<div class="issue-item"><strong>${issue.callsign}</strong>: ${issue.route}</div>`;
+                    issuesHtml += `<div class="issue-item"><strong>${escapeHtml(issue.callsign)}</strong>: ${escapeHtml(issue.route)} - ${escapeHtml(issue.reason || '')}</div>`;
                 });
                 issuesHtml += '</div>';
             }
@@ -68,39 +79,40 @@ function loadQA() {
             if (data.issues.invalid_speeds.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Invalid Speeds</div>';
                 data.issues.invalid_speeds.forEach(issue => {
-                    issuesHtml += `<div class="issue-item warning"><strong>${issue.callsign}</strong>: ${issue.gs} kts</div>`;
+                    issuesHtml += `<div class="issue-item warning"><strong>${escapeHtml(issue.callsign)}</strong>: ${issue.gs} kts</div>`;
                 });
                 issuesHtml += '</div>';
             }
-            
+
             if (data.issues.stuck_flights.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Stuck Flights (>12h in DB)</div>';
                 data.issues.stuck_flights.forEach(issue => {
-                    issuesHtml += `<div class="issue-item warning"><strong>${issue.callsign}</strong>: ${issue.hours_in_db} hours</div>`;
+                    issuesHtml += `<div class="issue-item warning"><strong>${escapeHtml(issue.callsign)}</strong>: ${issue.hours_in_db} hours</div>`;
                 });
                 issuesHtml += '</div>';
             }
-            
+
             if (data.issues.coordinate_anomalies.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Coordinate Anomalies</div>';
                 data.issues.coordinate_anomalies.forEach(issue => {
-                    issuesHtml += `<div class="issue-item info"><strong>${issue.callsign}</strong>: ${issue.reason}</div>`;
+                    issuesHtml += `<div class="issue-item info"><strong>${escapeHtml(issue.callsign)}</strong>: ${escapeHtml(issue.reason)}</div>`;
                 });
                 issuesHtml += '</div>';
             }
-            
+
             if (data.issues.missing_fields.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Missing Fields</div>';
                 data.issues.missing_fields.forEach(issue => {
-                    issuesHtml += `<div class="issue-item"><strong>${issue.callsign}</strong>: Missing ${issue.field}</div>`;
+                    issuesHtml += `<div class="issue-item"><strong>${escapeHtml(issue.callsign)}</strong>: Missing ${escapeHtml(issue.field)}</div>`;
                 });
                 issuesHtml += '</div>';
             }
-            
+
             if (data.issues.prediction_errors.length > 0) {
                 issuesHtml += '<div class="issue-list"><div class="chart-title">Position Prediction Errors</div>';
                 data.issues.prediction_errors.forEach(issue => {
-                    issuesHtml += `<div class="issue-item warning"><strong>${issue.callsign}</strong>: ${issue.error_nm}nm error over ${issue.time_span} min (predicted ${issue.predicted_speed} kts, actual ${issue.actual_speed} kts)</div>`;
+                    const reason = issue.reason || `${issue.error_nm}nm error over ${issue.time_span} min (predicted ${issue.predicted_speed} kts, actual ${issue.actual_speed} kts)`;
+                    issuesHtml += `<div class="issue-item warning"><strong>${escapeHtml(issue.callsign)}</strong>: ${escapeHtml(reason)}</div>`;
                 });
                 issuesHtml += '</div>';
             }

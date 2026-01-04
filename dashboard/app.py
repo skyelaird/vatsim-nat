@@ -45,6 +45,11 @@ def index():
     """Serve main dashboard page"""
     return send_from_directory('.', 'index.html')
 
+@app.route('/analytics')
+def analytics():
+    """Serve analytics/QA page"""
+    return send_from_directory('.', 'analytics.html')
+
 @app.route('/<path:path>')
 def serve_static(path):
     """Serve static files"""
@@ -245,6 +250,384 @@ def format_flight_for_strip(flight):
         'route': route,
         'strip_text': strip_text
     }
+
+@app.route('/api/qa')
+def qa_metrics():
+    """
+    QA/Sanity check endpoint - comprehensive data quality analysis
+    Returns issues with trajectory building, speeds, positions, and data completeness
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        cursor = conn.cursor()
+
+        # Get all active crossings
+        flights = get_active_crossings()
+
+        # Initialize issue trackers
+        trajectory_failures = []
+        invalid_speeds = []
+        stuck_flights = []
+        coordinate_anomalies = []
+        missing_fields = []
+        prediction_errors = []
+
+        total_flights = len(flights)
+        successful_trajectories = 0
+
+        # Check each flight for issues
+        for flight in flights:
+            callsign = flight['callsign']
+
+            # 1. Trajectory build test
+            try:
+                traj = build_trajectory(flight)
+                if traj and len(traj) > 0:
+                    successful_trajectories += 1
+                else:
+                    trajectory_failures.append({
+                        'callsign': callsign,
+                        'route': flight.get('oceanic_route', 'NO ROUTE'),
+                        'reason': 'Empty trajectory returned'
+                    })
+            except Exception as e:
+                trajectory_failures.append({
+                    'callsign': callsign,
+                    'route': flight.get('oceanic_route', 'NO ROUTE'),
+                    'reason': str(e)
+                })
+
+            # 2. Speed validation (100-600 kts reasonable for jets)
+            gs = flight.get('gs', 0)
+            if gs and (gs < 100 or gs > 600):
+                invalid_speeds.append({
+                    'callsign': callsign,
+                    'gs': gs
+                })
+
+            # 3. Coordinate validation (NAT region bounds)
+            lat = flight.get('lat', 0)
+            lon = flight.get('lon', 0)
+            if lat < 25 or lat > 75:
+                coordinate_anomalies.append({
+                    'callsign': callsign,
+                    'reason': f'Latitude {lat}° outside NAT region (25-75°N)'
+                })
+            if lon > -10 or lon < -80:
+                coordinate_anomalies.append({
+                    'callsign': callsign,
+                    'reason': f'Longitude {lon}° outside NAT region (80W-10W)'
+                })
+
+            # 4. Missing critical fields
+            if not flight.get('oceanic_route'):
+                missing_fields.append({
+                    'callsign': callsign,
+                    'field': 'oceanic_route'
+                })
+            if not flight.get('aircraft'):
+                missing_fields.append({
+                    'callsign': callsign,
+                    'field': 'aircraft_type'
+                })
+
+        # 5. Stuck flights check (>12 hours in database with no exit)
+        cursor.execute("""
+            SELECT callsign,
+                   CAST((julianday('now') - julianday(entry_time)) * 24 AS INTEGER) as hours_in_db
+            FROM nat_crossings
+            WHERE exit_time IS NULL
+              AND entry_time < datetime('now', '-12 hours')
+        """)
+        for row in cursor.fetchall():
+            stuck_flights.append({
+                'callsign': row[0],
+                'hours_in_db': row[1]
+            })
+
+        # 6. Position prediction errors (if prediction tracker is integrated)
+        # TODO: Integrate with prediction_tracker.py when implemented
+        # For now, check for position update staleness
+        cursor.execute("""
+            SELECT callsign,
+                   CAST((julianday('now') - julianday(last_update_time)) * 1440 AS INTEGER) as minutes_stale
+            FROM nat_crossings
+            WHERE exit_time IS NULL
+              AND last_update_time < datetime('now', '-15 minutes')
+        """)
+        for row in cursor.fetchall():
+            prediction_errors.append({
+                'callsign': row[0],
+                'error_nm': 0,
+                'time_span': row[1],
+                'predicted_speed': 0,
+                'actual_speed': 0,
+                'reason': f'No position update for {row[1]} minutes (stale data)'
+            })
+
+        conn.close()
+
+        # Calculate summary statistics
+        trajectory_success_rate = round((successful_trajectories / total_flights * 100) if total_flights > 0 else 0, 1)
+        total_issues = (len(trajectory_failures) + len(invalid_speeds) +
+                       len(stuck_flights) + len(coordinate_anomalies) +
+                       len(missing_fields) + len(prediction_errors))
+
+        return jsonify({
+            'timestamp': datetime.now(UTC).isoformat(),
+            'summary': {
+                'total_flights': total_flights,
+                'trajectory_success_rate': trajectory_success_rate,
+                'total_issues': total_issues
+            },
+            'issues': {
+                'trajectory_failures': trajectory_failures,
+                'invalid_speeds': invalid_speeds,
+                'stuck_flights': stuck_flights,
+                'coordinate_anomalies': coordinate_anomalies,
+                'missing_fields': missing_fields,
+                'prediction_errors': prediction_errors
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in QA metrics: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/qa/filtering')
+def qa_filtering():
+    """
+    Flight filtering report - explains what's displayed vs filtered out
+    Helps validate why certain flights appear or don't appear on main page
+    """
+    try:
+        flights = get_active_crossings()
+        trajectories = [build_trajectory(f) for f in flights]
+
+        now = datetime.now(UTC)
+        approaching = filter_approaching_flights(flights, trajectories, now, 60)
+
+        # Track filtering reasons
+        no_trajectory = []
+        not_approaching = []
+        invalid_entry = []
+        displayed = []
+
+        for i, flight in enumerate(flights):
+            callsign = flight['callsign']
+            traj = trajectories[i]
+
+            if not traj or len(traj) == 0:
+                no_trajectory.append(callsign)
+            elif flight not in approaching:
+                # Check why not approaching
+                if traj:
+                    entry_point = traj[0]
+                    entry_eta = entry_point['eta']
+                    time_to_entry = (entry_eta - now).total_seconds() / 60
+
+                    if time_to_entry < 0:
+                        not_approaching.append({
+                            'callsign': callsign,
+                            'reason': f'Already passed entry ({abs(int(time_to_entry))} min ago)'
+                        })
+                    elif time_to_entry > 60:
+                        not_approaching.append({
+                            'callsign': callsign,
+                            'reason': f'Too far from entry ({int(time_to_entry)} min away)'
+                        })
+                    else:
+                        # Check if entry is coordinate vs named fix
+                        entry_waypoint = entry_point['waypoint']
+                        if re.match(r'^\d{2,4}[NS]\d{3,5}[EW]$', entry_waypoint):
+                            invalid_entry.append({
+                                'callsign': callsign,
+                                'entry': entry_waypoint,
+                                'reason': 'Entry is coordinate, not named fix'
+                            })
+            else:
+                displayed.append(callsign)
+
+        # Group displayed flights by entry point
+        entry_breakdown = {}
+        for flight in approaching:
+            entry = flight.get('entry_fix', 'UNKNOWN')
+            if entry not in entry_breakdown:
+                entry_breakdown[entry] = []
+            entry_breakdown[entry].append(flight['callsign'])
+
+        return jsonify({
+            'timestamp': datetime.now(UTC).isoformat(),
+            'summary': {
+                'total_in_db': len(flights),
+                'displayed_on_main': len(displayed),
+                'filtered_out': len(flights) - len(displayed)
+            },
+            'filtering_reasons': {
+                'no_trajectory': no_trajectory,
+                'not_approaching': not_approaching,
+                'invalid_entry_point': invalid_entry
+            },
+            'displayed_flights': displayed,
+            'flights_per_entry': entry_breakdown
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in filtering report: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/qa/flight/<callsign>')
+def qa_flight_detail(callsign):
+    """
+    Detailed flight validation - compare raw DB data vs processed data
+    Shows exactly what's happening with a specific flight
+    """
+    try:
+        # Get raw data from database
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT callsign, aircraft_type, departure, destination,
+                   oceanic_route, ots_track, filed_altitude, selcal,
+                   entry_time, current_lat, current_lon, current_fl, current_gs,
+                   last_update_time
+            FROM nat_crossings
+            WHERE callsign = ? AND exit_time IS NULL
+            ORDER BY entry_time DESC
+            LIMIT 1
+        """, (callsign,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'error': f'Flight {callsign} not found in active crossings'}), 404
+
+        raw_data = {
+            'callsign': row[0],
+            'aircraft_type': row[1],
+            'departure': row[2],
+            'destination': row[3],
+            'oceanic_route': row[4],
+            'ots_track': row[5],
+            'filed_altitude': row[6],
+            'selcal': row[7],
+            'entry_time': row[8],
+            'current_lat': row[9],
+            'current_lon': row[10],
+            'current_fl': row[11],
+            'current_gs': row[12],
+            'last_update_time': row[13]
+        }
+
+        # Build flight object for processing
+        flight = {
+            'callsign': row[0],
+            'aircraft': row[1],
+            'departure': row[2],
+            'destination': row[3],
+            'oceanic_route': row[4],
+            'lat': row[9],
+            'lon': row[10],
+            'fl': row[11],
+            'gs': row[12]
+        }
+
+        # Try to build trajectory
+        trajectory_status = {
+            'success': False,
+            'error': None,
+            'waypoints': []
+        }
+
+        try:
+            traj = build_trajectory(flight)
+            if traj and len(traj) > 0:
+                trajectory_status['success'] = True
+                trajectory_status['waypoints'] = [
+                    {
+                        'waypoint': wp['waypoint'],
+                        'lat': wp['lat'],
+                        'lon': wp['lon'],
+                        'eta': wp['eta'].strftime('%H%MZ')
+                    }
+                    for wp in traj[:5]  # First 5 waypoints
+                ]
+            else:
+                trajectory_status['error'] = 'Empty trajectory returned'
+        except Exception as e:
+            trajectory_status['error'] = str(e)
+
+        # Check if approaching
+        now = datetime.now(UTC)
+        is_approaching = False
+        entry_info = None
+
+        if trajectory_status['success']:
+            entry_point = traj[0]
+            entry_eta = entry_point['eta']
+            time_to_entry = (entry_eta - now).total_seconds() / 60
+
+            entry_info = {
+                'entry_fix': entry_point['waypoint'],
+                'entry_eta': entry_eta.strftime('%H%MZ'),
+                'minutes_to_entry': round(time_to_entry, 1),
+                'is_approaching': 0 <= time_to_entry <= 60
+            }
+            is_approaching = entry_info['is_approaching']
+
+        # Direction classification
+        is_eastbound = flight['departure'][0] in 'KC'
+
+        # Calculate how long in DB
+        if raw_data['entry_time']:
+            entry_dt = datetime.fromisoformat(raw_data['entry_time'].replace('Z', '+00:00'))
+            minutes_in_db = (now - entry_dt).total_seconds() / 60
+        else:
+            minutes_in_db = 0
+
+        # Calculate staleness
+        if raw_data['last_update_time']:
+            update_dt = datetime.fromisoformat(raw_data['last_update_time'].replace('Z', '+00:00'))
+            minutes_stale = (now - update_dt).total_seconds() / 60
+        else:
+            minutes_stale = 999999
+
+        return jsonify({
+            'callsign': callsign,
+            'raw_from_database': raw_data,
+            'processed': {
+                'direction': 'EASTBOUND' if is_eastbound else 'WESTBOUND',
+                'trajectory_build': trajectory_status,
+                'entry_point_info': entry_info,
+                'is_approaching': is_approaching,
+                'will_display_on_main': is_approaching and trajectory_status['success']
+            },
+            'data_quality': {
+                'minutes_in_database': round(minutes_in_db, 1),
+                'minutes_since_update': round(minutes_stale, 1),
+                'is_stale': minutes_stale > 15,
+                'has_oceanic_route': raw_data['oceanic_route'] is not None,
+                'has_selcal': raw_data['selcal'] is not None
+            },
+            'issues': [
+                'No oceanic route' if not raw_data['oceanic_route'] else None,
+                f'Stale data ({int(minutes_stale)} min)' if minutes_stale > 15 else None,
+                f'Stuck in DB ({int(minutes_in_db/60)} hours)' if minutes_in_db > 720 else None,
+                'Trajectory build failed' if not trajectory_status['success'] else None
+            ]
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in flight detail: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("=" * 70)
