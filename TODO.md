@@ -1,5 +1,24 @@
 # NAT DASHBOARD TODO
 
+## ✅ COMPLETED (2026-01-04) - See SESSION_2026-01-04.md
+
+### Critical Collector Bug Fixed
+- [x] **FIXED**: Collector entry detection - flights now marked "entered" only at actual NAT boundaries
+- [x] **FIXED**: NAT_LON_EAST boundary corrected from -10W to -15W
+- [x] **FIXED**: Entry_time set to NULL initially, updated only when boundary crossed
+- [x] **FIXED**: 82 flights with incorrect entry times migrated
+- [x] **COMPLETED**: NSSM service installation for 24/7 operation
+- [x] **COMPLETED**: Database migration preserving 421 historical crossings
+- [x] **COMPLETED**: Entry point detection improvements (detect_entry_point function)
+
+### Approaching Flights Issue Resolved
+- [x] **FIXED**: "Exclude Already-Engaged Flights" - Root cause addressed
+  - Collector no longer marks flights as "entered" prematurely
+  - Dashboard now correctly shows approaching vs engaged flights
+  - Fixed by collector entry detection logic (see commit ba3cde4)
+
+---
+
 ## 🔴🔴🔴 CRITICAL - CODE REVIEW FINDINGS (2026-01-04)
 
 ### SYNTAX ERROR - App Won't Run!
@@ -45,20 +64,6 @@
 ---
 
 ## 🔴 CRITICAL - BLOCKING ISSUES
-
-### Exclude Already-Engaged Flights
-- [ ] **SYMPTOM**: WJA1 (already exiting NAT) shows as "approaching AGORI"
-- [ ] **ROOT CAUSE**: Flight entered NAT hours ago, now near exit point AGORI
-- [ ] **PROBLEM**: build_trajectory finds AGORI as closest waypoint, flight passes time filter
-- [ ] **FIX**: Check `entry_time` from database in filter_approaching_flights()
-  ```python
-  # Get entry times from DB
-  cursor.execute("""SELECT callsign, minutes_since_entry FROM nat_crossings 
-                     WHERE exit_time IS NULL AND entry_time IS NOT NULL""")
-  # Skip if already engaged >5 minutes
-  if minutes_since_entry > 5: continue
-  ```
-- [ ] **TEST**: Verify WJA1 no longer appears in approaching list
 
 ### NAT Region Filter
 - [x] **COMPLETED**: Changed longitude from -80W/-10W to -60W/-10W
