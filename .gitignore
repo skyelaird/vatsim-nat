@@ -15,10 +15,14 @@ nat_traffic.db
 nat_traffic.db-journal
 *.db
 *.db-journal
+*.db.fresh
+*.db.backup
 
 # Logs
 *.log
 nat_collector.log
+nssm_stdout.log
+nssm_stderr.log
 
 # IDE
 .vscode/
@@ -41,3 +45,13 @@ Data-PMDG/
 # Keep structure files
 !NavData/cycle_info.txt
 !NavData/cycle.json
+
+# Service management (NSSM)
+nssm/
+nssm*.zip
+*_service.bat
+start_service.bat
+resume_service.bat
+
+# Keep service installation documentation
+!INSTALL_SERVICE.md
