@@ -517,10 +517,10 @@ pip install -r requirements.txt
 
 ## Author
 
-**Joel Tanner (VE1ATM)**  
+**Joel Morin (VE1ATM / 81049)**  
 Former NAV CANADA Air Traffic Controller  
-Moncton/Gander FIRs (CZQM/CZQX)  
-VATSIM CZQM/CZQX vACC - Sector File Maintainer
+VATSIM Moncton/Gander FIRs (CZQM/CZQX), Chief  
+Gander Oceanic Tactical Support / Instructor
 
 ---
 
